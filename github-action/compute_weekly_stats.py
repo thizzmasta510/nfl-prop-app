@@ -13,14 +13,9 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from nflverse_loader import load as load_nflverse
+from nflverse_loader import load as load_nflverse, resolve_season
 
 
-def current_season():
-    now = datetime.now(timezone.utc)
-    # NFL season year rolls over around March; a September game belongs to
-    # the season that started that same calendar year.
-    return now.year if now.month >= 3 else now.year - 1
 
 
 def compute_pressure_rate(pbp: pd.DataFrame) -> pd.DataFrame:
@@ -65,7 +60,7 @@ def load_pbp(season: int):
 
 
 def main():
-    requested = current_season()
+    requested = resolve_season()
     pbp, season = load_pbp(requested)
     if pbp is None:
         payload = {"generatedAt": datetime.now(timezone.utc).isoformat(),
