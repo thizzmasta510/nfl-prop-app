@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from nflverse_loader import load as load_nflverse
+from nflverse_loader import load as load_nflverse, resolve_season
 
 
 # Suffixes are stripped during normalization because sources disagree on them
@@ -55,9 +55,6 @@ def short_key(name: str) -> str:
     return f"{parts[0][0]} {parts[-1]}"
 
 
-def current_season() -> int:
-    now = datetime.now(timezone.utc)
-    return now.year if now.month >= 3 else now.year - 1
 
 
 # Column mapping from the nflverse weekly dataset to the stat names the app
@@ -84,8 +81,8 @@ def load_weekly(season: int):
 
 
 def main():
-    requested = current_season()
-    print(f"Current season by date: {requested}")
+    requested = resolve_season()
+    print(f"Season to request: {requested}")
     wk, season = load_weekly(requested)
 
     if wk is None:
