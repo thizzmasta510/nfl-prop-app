@@ -38,11 +38,16 @@ jobs:
       # Prints what each package actually exposes, and the real column names,
       # before any processing. The scripts probe for function names at runtime,
       # so if a guess is wrong this is where the correct name appears.
+      # Prints what each package exposes and the real column names before any
+      # processing. Runs from inside github-action with the directory added to
+      # sys.path explicitly: a heredoc script reads from stdin, which does not
+      # put the working directory on the import path the way running a file does.
       - name: Discover API and columns
         run: |
           cd github-action
           python - <<'PY'
-          import sys
+          import sys, os
+          sys.path.insert(0, os.getcwd())
           for name in ("nflreadpy", "nfl_data_py"):
               try:
                   m = __import__(name)
@@ -50,14 +55,22 @@ jobs:
                   print(f"{name}: {fns}")
               except Exception as e:
                   print(f"{name}: NOT AVAILABLE ({type(e).__name__})")
+          try:
+              import nflreadpy
+              print("\nnflreadpy.get_current_season():", nflreadpy.get_current_season())
+              print("nflreadpy.get_current_week():", nflreadpy.get_current_week())
+          except Exception as e:
+              print("season helpers unavailable:", e)
           print()
-          from nflverse_loader import load
-          df, yr = load("weekly", 2026, fallback_seasons=1)
+          from nflverse_loader import load, resolve_season
+          season = resolve_season()
+          print("resolved season to request:", season)
+          df, yr = load("weekly", season, fallback_seasons=1)
           if df is not None:
               print(f"\nRESOLVED season {yr}, {len(df)} rows")
               print("columns:", sorted(df.columns.tolist()))
               if "week" in df.columns:
-                  print("weeks present:", sorted(df['week'].dropna().unique().tolist()))
+                  print("weeks present:", sorted(df["week"].dropna().unique().tolist()))
           else:
               print("\nNo data resolved. See API listing above.")
               sys.exit(1)
