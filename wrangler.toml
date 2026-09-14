@@ -1,0 +1,27 @@
+name = "nfl-prop-model"
+main = "src/index.js"
+compatibility_date = "2024-09-01"
+
+# Free-tier R2 bucket used as the app's entire "database".
+# Create it first with: wrangler r2 bucket create nfl-prop-data
+[[r2_buckets]]
+binding = "PROP_DATA"
+bucket_name = "nfl-prop-data"
+
+# Runs the scheduled handler twice a week: Tuesday 10am UTC (early-week baseline)
+# and Friday 6pm UTC (post-final-injury-report numbers). Cron Triggers are free
+# on Cloudflare's Workers plan, up to 3 per account.
+[triggers]
+crons = ["0 10 * * 2", "0 18 * * 5"]
+
+# Set real secrets with `wrangler secret put NAME`, never commit them here.
+# Required: APP_SECRET (protects all write/delete endpoints)
+# Optional: ALLOWED_ORIGIN (restrict which site can call the API; defaults to
+#   locking to your own Worker's origin if unset)
+# Optional: STATS_FEED_URL (the pre-summarized JSON your GitHub Action publishes,
+#   see /github-action/README.md)
+
+# Set with `wrangler secret put NAME`:
+#   APP_SECRET        required, protects every endpoint
+#   PLAYER_STATS_URL  raw GitHub URL to player-stats.json (auto-grading)
+#   STATS_FEED_URL    raw GitHub URL to weekly-stats.json (model inputs)

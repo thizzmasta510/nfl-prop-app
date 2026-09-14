@@ -1,0 +1,45 @@
+name: Compute weekly NFL stats
+
+on:
+  schedule:
+    # Tuesday 09:00 UTC and Friday 17:00 UTC, an hour ahead of the Worker's own
+    # cron so the published files are ready before the Worker fetches them.
+    # Tuesday's run is the one that matters for grading, since it lands after
+    # Monday Night Football has been recorded.
+    - cron: "0 9 * * 2"
+    - cron: "0 17 * * 5"
+  workflow_dispatch: {}  # manual trigger from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  build-stats:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install nfl_data_py pandas
+
+      # Team pressure rate and player red zone share, used as model inputs.
+      - name: Compute weekly team/usage stats
+        run: python github-action/compute_weekly_stats.py
+        continue-on-error: true
+
+      # Per-player weekly stat lines, used to auto-grade logged picks.
+      - name: Compute player stat lines
+        run: python github-action/compute_player_stats.py
+        continue-on-error: true
+
+      - name: Commit and push results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A weekly-stats.json player-stats.json || true
+          git diff --quiet --cached || git commit -m "Update NFL stat feeds"
+          git push
