@@ -13,11 +13,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-try:
-    import nfl_data_py as nfl
-except ImportError:
-    print("Run: pip install nfl_data_py pandas", file=sys.stderr)
-    raise
+from nflverse_loader import load as load_nflverse
 
 
 def current_season():
@@ -64,27 +60,8 @@ def compute_red_zone_share(pbp: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_pbp(season: int):
-    """Load play-by-play, falling back through earlier seasons on a 404.
-
-    Same rationale as compute_player_stats.py: the current season's file may
-    not be published yet, or nfl_data_py's URL path may be stale. Reporting
-    which seasons resolve is more useful than crashing.
-    """
-    import urllib.error
-    for yr in [season, season - 1, season - 2]:
-        try:
-            print(f"Trying pbp data for {yr}...")
-            pbp = nfl.import_pbp_data([yr], downcast=True)
-            if pbp.empty:
-                print(f"  {yr}: 0 rows")
-                continue
-            print(f"  {yr}: OK, {len(pbp)} rows")
-            return pbp, yr
-        except urllib.error.HTTPError as e:
-            print(f"  {yr}: HTTP {e.code} (not published, or stale URL path)")
-        except Exception as e:
-            print(f"  {yr}: {type(e).__name__}: {e}")
-    return None, None
+    """Thin wrapper over the shared loader, which tries nflreadpy first."""
+    return load_nflverse("pbp", season)
 
 
 def main():
