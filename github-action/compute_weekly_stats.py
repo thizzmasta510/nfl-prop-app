@@ -63,9 +63,42 @@ def compute_red_zone_share(pbp: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
+def load_pbp(season: int):
+    """Load play-by-play, falling back through earlier seasons on a 404.
+
+    Same rationale as compute_player_stats.py: the current season's file may
+    not be published yet, or nfl_data_py's URL path may be stale. Reporting
+    which seasons resolve is more useful than crashing.
+    """
+    import urllib.error
+    for yr in [season, season - 1, season - 2]:
+        try:
+            print(f"Trying pbp data for {yr}...")
+            pbp = nfl.import_pbp_data([yr], downcast=True)
+            if pbp.empty:
+                print(f"  {yr}: 0 rows")
+                continue
+            print(f"  {yr}: OK, {len(pbp)} rows")
+            return pbp, yr
+        except urllib.error.HTTPError as e:
+            print(f"  {yr}: HTTP {e.code} (not published, or stale URL path)")
+        except Exception as e:
+            print(f"  {yr}: {type(e).__name__}: {e}")
+    return None, None
+
+
 def main():
-    season = current_season()
-    pbp = nfl.import_pbp_data([season], downcast=True)
+    requested = current_season()
+    pbp, season = load_pbp(requested)
+    if pbp is None:
+        payload = {"generatedAt": datetime.now(timezone.utc).isoformat(),
+                   "season": requested, "players": [], "teams": [],
+                   "note": "no season data resolved; see workflow logs"}
+        with open("weekly-stats.json", "w") as f:
+            json.dump(payload, f)
+        print("Wrote empty weekly-stats.json", file=sys.stderr)
+        sys.exit(1)
+    print(f"Using season {season}")
 
     pressure_df = compute_pressure_rate(pbp)
     rz_df = compute_red_zone_share(pbp)
