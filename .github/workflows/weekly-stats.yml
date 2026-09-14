@@ -19,17 +19,42 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          # 3.11 deliberately, not 3.12+. nfl_data_py pins numpy<2.0, which on
+          # 3.12 makes pip backtrack pandas to 1.5.3 — a version with no 3.12
+          # wheel, so it tries to build from source and fails on a missing
+          # pkg_resources. 3.11 has wheels for the whole pinned set.
+          python-version: "3.11"
 
       # pyarrow is an implicit requirement: nfl_data_py reads parquet files and
       # will fail at import or first read without it. Installing it explicitly
       # rather than relying on dependency resolution.
+      # Versions are pinned rather than resolved. Left to itself, pip tries to
+      # satisfy nfl_data_py's numpy<2.0 pin by walking pandas backwards until it
+      # reaches a version that predates prebuilt wheels, then fails compiling
+      # from source. Installing the constrained set first, then nfl_data_py on
+      # top, avoids the backtracking entirely.
+      #
+      # setuptools is explicit because some older build paths still expect
+      # pkg_resources, which is no longer bundled by default.
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install nfl_data_py pandas pyarrow
+          pip install setuptools wheel
+          pip install "numpy<2" "pandas>=2.0,<3" pyarrow
+          pip install nfl_data_py
           echo "--- installed versions ---"
-          python -c "import nfl_data_py, pandas, pyarrow; print('nfl_data_py', nfl_data_py.__version__ if hasattr(nfl_data_py,'__version__') else 'n/a'); print('pandas', pandas.__version__); print('pyarrow', pyarrow.__version__)"
+          python - <<'PY'
+          import pandas, numpy, pyarrow
+          print("pandas ", pandas.__version__)
+          print("numpy  ", numpy.__version__)
+          print("pyarrow", pyarrow.__version__)
+          try:
+              import nfl_data_py
+              print("nfl_data_py imported OK")
+          except Exception as e:
+              print("nfl_data_py import FAILED:", type(e).__name__, e)
+              raise
+          PY
 
       # Prints the actual column names the dataset exposes before any script
       # runs. The scripts were written against documented column names that
