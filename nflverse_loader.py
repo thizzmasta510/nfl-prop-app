@@ -57,6 +57,8 @@ def _try_nflreadpy(kind, season):
         return None
 
     # Candidate function names, most likely first. Probed rather than assumed.
+    # Confirmed against the live package: nflreadpy exposes load_player_stats
+    # and load_pbp. The alternates are retained only as version insurance.
     candidates = {
         "weekly": ["load_player_stats", "load_weekly_data", "load_player_stats_weekly"],
         "pbp": ["load_pbp", "load_pbp_data"],
@@ -138,3 +140,21 @@ def load(kind, season, fallback_seasons=2):
         file=sys.stderr,
     )
     return None, None
+
+
+def resolve_season():
+    """Current season, preferring nflreadpy's own helper over date arithmetic.
+
+    nflreadpy exposes get_current_season(), which tracks the league calendar
+    properly. Guessing from the month is a worse approximation, so it is only
+    the fallback.
+    """
+    try:
+        import nflreadpy as nfl
+        if hasattr(nfl, "get_current_season"):
+            return int(nfl.get_current_season())
+    except Exception as e:
+        print(f"  get_current_season() unavailable ({type(e).__name__}), falling back to date")
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    return now.year if now.month >= 3 else now.year - 1
