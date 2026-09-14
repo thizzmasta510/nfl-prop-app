@@ -42,38 +42,43 @@ jobs:
       # processing. Runs from inside github-action with the directory added to
       # sys.path explicitly: a heredoc script reads from stdin, which does not
       # put the working directory on the import path the way running a file does.
+      # Self-contained on purpose: calls nflreadpy directly rather than
+      # importing the shared loader, so a missing or misplaced file cannot
+      # obscure the actual question, which is whether the current season's
+      # data is reachable. Also lists the directory so a missing file is
+      # visible rather than inferred.
       - name: Discover API and columns
         run: |
-          cd github-action
+          echo "--- contents of github-action/ ---"
+          ls -la github-action/
+          echo
           python - <<'PY'
-          import sys, os
-          sys.path.insert(0, os.getcwd())
-          for name in ("nflreadpy", "nfl_data_py"):
+          import sys
+          import nflreadpy as nfl
+          print("nflreadpy version:", getattr(nfl, "version", "n/a"))
+          print("get_current_season():", nfl.get_current_season())
+          print("get_current_week():", nfl.get_current_week())
+
+          def probe(label, fn, season):
+              print(f"\n--- {label}, season {season} ---")
               try:
-                  m = __import__(name)
-                  fns = sorted(n for n in dir(m) if not n.startswith("_") and callable(getattr(m, n, None)))
-                  print(f"{name}: {fns}")
+                  df = fn(seasons=[season])
+                  if hasattr(df, "to_pandas"):
+                      df = df.to_pandas()
+                  print(f"rows: {len(df)}")
+                  if len(df):
+                      print("columns:", sorted(df.columns.tolist()))
+                      if "week" in df.columns:
+                          print("weeks:", sorted(df["week"].dropna().unique().tolist()))
+                  return len(df)
               except Exception as e:
-                  print(f"{name}: NOT AVAILABLE ({type(e).__name__})")
-          try:
-              import nflreadpy
-              print("\nnflreadpy.get_current_season():", nflreadpy.get_current_season())
-              print("nflreadpy.get_current_week():", nflreadpy.get_current_week())
-          except Exception as e:
-              print("season helpers unavailable:", e)
-          print()
-          from nflverse_loader import load, resolve_season
-          season = resolve_season()
-          print("resolved season to request:", season)
-          df, yr = load("weekly", season, fallback_seasons=1)
-          if df is not None:
-              print(f"\nRESOLVED season {yr}, {len(df)} rows")
-              print("columns:", sorted(df.columns.tolist()))
-              if "week" in df.columns:
-                  print("weeks present:", sorted(df["week"].dropna().unique().tolist()))
-          else:
-              print("\nNo data resolved. See API listing above.")
-              sys.exit(1)
+                  print(f"FAILED: {type(e).__name__}: {e}")
+                  return 0
+
+          season = int(nfl.get_current_season())
+          n_cur = probe("load_player_stats", nfl.load_player_stats, season)
+          if not n_cur:
+              probe("load_player_stats", nfl.load_player_stats, season - 1)
           PY
 
       - name: Compute player stat lines
