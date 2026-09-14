@@ -82,21 +82,68 @@ STAT_COLUMNS = {
 }
 
 
-def main():
-    season = current_season()
-    print(f"Fetching weekly player data for {season}...")
-    wk = nfl.import_weekly_data([season], downcast=True)
+def load_weekly(season: int):
+    """Load weekly data, falling back through earlier seasons on a 404.
 
-    if wk.empty:
-        print("No weekly data available yet for this season.", file=sys.stderr)
+    nfl_data_py builds a URL per season and raises HTTPError 404 when that
+    file does not exist. That happens for two different reasons which matter
+    to tell apart: the current season's file may not be published yet, or the
+    package's URL path may be stale (nfl_data_py pins numpy<2.0, which
+    suggests it is no longer actively maintained).
+
+    Rather than crash, this reports exactly which seasons resolve. A run that
+    produces last season's data is still useful for backtesting, and the log
+    makes clear whether the current season is simply unavailable.
+    """
+    import urllib.error
+
+    attempts = [season, season - 1, season - 2]
+    for yr in attempts:
+        try:
+            print(f"Trying weekly data for {yr}...")
+            wk = nfl.import_weekly_data([yr], downcast=True)
+            if wk.empty:
+                print(f"  {yr}: returned 0 rows")
+                continue
+            weeks = sorted(wk["week"].dropna().unique().tolist()) if "week" in wk.columns else []
+            print(f"  {yr}: OK, {len(wk)} rows, weeks {weeks}")
+            return wk, yr
+        except urllib.error.HTTPError as e:
+            print(f"  {yr}: HTTP {e.code} (file not published, or the package's URL path is stale)")
+        except Exception as e:
+            print(f"  {yr}: {type(e).__name__}: {e}")
+
+    print(
+        "\nNo season resolved. Either nflverse has not published these files at the\n"
+        "path nfl_data_py expects, or the package needs replacing with nflreadpy,\n"
+        "the actively maintained successor.",
+        file=sys.stderr,
+    )
+    return None, None
+
+
+def main():
+    requested = current_season()
+    print(f"Current season by date: {requested}")
+    wk, season = load_weekly(requested)
+
+    if wk is None:
+        # Write a valid empty payload rather than leaving no file at all, so the
+        # Worker's shape check rejects it cleanly instead of erroring on a
+        # missing fetch target.
         payload = {
             "generatedAt": datetime.now(timezone.utc).isoformat(),
-            "season": season,
+            "season": requested,
             "players": [],
+            "note": "no season data resolved; see workflow logs",
         }
         with open("player-stats.json", "w") as f:
             json.dump(payload, f)
-        return
+        print("Wrote empty player-stats.json")
+        sys.exit(1)
+
+    print(f"\nUsing season {season}")
+    print(f"Available columns: {sorted(wk.columns.tolist())}")
 
     # Prefer the display name; fall back to the abbreviated name column.
     name_col = "player_display_name" if "player_display_name" in wk.columns else "player_name"
