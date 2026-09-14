@@ -4,11 +4,9 @@ on:
   schedule:
     # Tuesday 09:00 UTC and Friday 17:00 UTC, an hour ahead of the Worker's own
     # cron so the published files are ready before the Worker fetches them.
-    # Tuesday's run is the one that matters for grading, since it lands after
-    # Monday Night Football has been recorded.
     - cron: "0 9 * * 2"
     - cron: "0 17 * * 5"
-  workflow_dispatch: {}  # manual trigger from the Actions tab
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -17,29 +15,81 @@ jobs:
   build-stats:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
+      # pyarrow is an implicit requirement: nfl_data_py reads parquet files and
+      # will fail at import or first read without it. Installing it explicitly
+      # rather than relying on dependency resolution.
       - name: Install dependencies
-        run: pip install nfl_data_py pandas
+        run: |
+          python -m pip install --upgrade pip
+          pip install nfl_data_py pandas pyarrow
+          echo "--- installed versions ---"
+          python -c "import nfl_data_py, pandas, pyarrow; print('nfl_data_py', nfl_data_py.__version__ if hasattr(nfl_data_py,'__version__') else 'n/a'); print('pandas', pandas.__version__); print('pyarrow', pyarrow.__version__)"
 
-      # Team pressure rate and player red zone share, used as model inputs.
+      # Prints the actual column names the dataset exposes before any script
+      # runs. The scripts were written against documented column names that
+      # have never been checked against live data, so if they have drifted this
+      # is where it shows up, with the real names visible rather than guessed.
+      - name: Inspect available columns
+        run: |
+          python - <<'PY'
+          import nfl_data_py as nfl
+          from datetime import datetime, timezone
+          now = datetime.now(timezone.utc)
+          season = now.year if now.month >= 3 else now.year - 1
+          print("season:", season)
+          try:
+              wk = nfl.import_weekly_data([season], downcast=True)
+              print("weekly rows:", len(wk))
+              print("weekly columns:", sorted(wk.columns.tolist()))
+          except Exception as e:
+              print("import_weekly_data FAILED:", type(e).__name__, e)
+          try:
+              pbp = nfl.import_pbp_data([season], downcast=True)
+              print("pbp rows:", len(pbp))
+              cols = pbp.columns.tolist()
+              wanted = ["qb_dropback","qb_hit","sack","yardline_100","play_type",
+                        "posteam","week","rusher_player_name","receiver_player_name"]
+              print("pbp has wanted cols:", {c: (c in cols) for c in wanted})
+          except Exception as e:
+              print("import_pbp_data FAILED:", type(e).__name__, e)
+          PY
+
+      - name: Compute player stat lines
+        run: python github-action/compute_player_stats.py
+
       - name: Compute weekly team/usage stats
         run: python github-action/compute_weekly_stats.py
         continue-on-error: true
 
-      # Per-player weekly stat lines, used to auto-grade logged picks.
-      - name: Compute player stat lines
-        run: python github-action/compute_player_stats.py
-        continue-on-error: true
+      - name: Show what was produced
+        if: always()
+        run: |
+          for f in player-stats.json weekly-stats.json; do
+            if [ -f "$f" ]; then
+              echo "$f: $(wc -c < $f) bytes"
+              head -c 300 "$f"; echo
+            else
+              echo "$f: NOT CREATED"
+            fi
+          done
 
       - name: Commit and push results
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A weekly-stats.json player-stats.json || true
-          git diff --quiet --cached || git commit -m "Update NFL stat feeds"
-          git push
+          for f in player-stats.json weekly-stats.json; do
+            [ -f "$f" ] && git add "$f"
+          done
+          if git diff --quiet --cached; then
+            echo "Nothing to commit."
+          else
+            git commit -m "Update NFL stat feeds"
+            git push
+          fi
