@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-14T16:03:56.399804+00:00",
+  "generatedAt": "2026-09-15T09:05:40.489315+00:00",
   "season": 2026,
   "players": [
     {
@@ -67,6 +67,12 @@
       "team": "TB",
       "week": 1,
       "redZoneShare": 0.375
+    },
+    {
+      "player": "B.Nix",
+      "team": "DEN",
+      "week": 1,
+      "redZoneShare": 0.333
     },
     {
       "player": "B.Strange",
@@ -143,6 +149,12 @@
     {
       "player": "C.Skattebo",
       "team": "NYG",
+      "week": 1,
+      "redZoneShare": 0.333
+    },
+    {
+      "player": "C.Sutton",
+      "team": "DEN",
       "week": 1,
       "redZoneShare": 0.333
     },
@@ -263,6 +275,18 @@
     {
       "player": "E.Demercado",
       "team": "DAL",
+      "week": 1,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "E.Engram",
+      "team": "DEN",
+      "week": 1,
+      "redZoneShare": 0.333
+    },
+    {
+      "player": "E.Johnson",
+      "team": "KC",
       "week": 1,
       "redZoneShare": 0.111
     },
@@ -513,6 +537,12 @@
       "redZoneShare": 0.375
     },
     {
+      "player": "K.Walker",
+      "team": "KC",
+      "week": 1,
+      "redZoneShare": 0.444
+    },
+    {
       "player": "K.Williams",
       "team": "LA",
       "week": 1,
@@ -621,6 +651,12 @@
       "redZoneShare": 0.4
     },
     {
+      "player": "P.Mahomes",
+      "team": "KC",
+      "week": 1,
+      "redZoneShare": 0.222
+    },
+    {
       "player": "P.Nacua",
       "team": "LA",
       "week": 1,
@@ -637,6 +673,12 @@
       "team": "PIT",
       "week": 1,
       "redZoneShare": 0.2
+    },
+    {
+      "player": "R.Rice",
+      "team": "KC",
+      "week": 1,
+      "redZoneShare": 0.111
     },
     {
       "player": "R.Rivers",
@@ -751,6 +793,12 @@
       "team": "IND",
       "week": 1,
       "redZoneShare": 0.125
+    },
+    {
+      "player": "X.Worthy",
+      "team": "KC",
+      "week": 1,
+      "redZoneShare": 0.111
     }
   ],
   "teams": [
@@ -800,6 +848,11 @@
       "pressureRateAllowed": 0.083
     },
     {
+      "team": "DEN",
+      "week": 1,
+      "pressureRateAllowed": 0.212
+    },
+    {
       "team": "DET",
       "week": 1,
       "pressureRateAllowed": 0.195
@@ -823,6 +876,11 @@
       "team": "JAX",
       "week": 1,
       "pressureRateAllowed": 0.125
+    },
+    {
+      "team": "KC",
+      "week": 1,
+      "pressureRateAllowed": 0.152
     },
     {
       "team": "LA",
