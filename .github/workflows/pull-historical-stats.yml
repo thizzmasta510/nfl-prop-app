@@ -1,0 +1,58 @@
+name: Pull historical stats for backtesting
+
+# Manual dispatch only, deliberately not on the Tuesday/Friday schedule the
+# live-season scripts use. This is a one-time (or occasional) heavy pull
+# across multiple seasons, not something that needs to run weekly.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-history:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          # 3.11 deliberately: nfl_data_py's numpy<2.0 pin causes pip to
+          # backtrack pandas on 3.12+; nflreadpy is the primary path here
+          # regardless, but 3.11 avoids that whole class of problem if the
+          # fallback is ever needed.
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel
+          pip install "numpy<2" "pandas>=2.0,<3" pyarrow
+          pip install nflreadpy
+
+      - name: Pull historical player stats
+        run: cd github-action && python compute_historical_stats.py && mv player-stats-history.json ../backtest/
+
+      - name: Show what was produced
+        if: always()
+        run: |
+          f="backtest/player-stats-history.json"
+          if [ -f "$f" ]; then
+            echo "$f: $(wc -c < $f) bytes"
+            python -c "import json; d=json.load(open('$f')); print('  seasons attempted:', d.get('seasonsAttempted')); print('  seasons resolved: ', d.get('seasonsResolved')); print('  player-week records:', len(d.get('players', [])))"
+          else
+            echo "$f: NOT CREATED"
+          fi
+
+      - name: Commit and push results
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add backtest/player-stats-history.json || true
+          if git diff --quiet --cached; then
+            echo "Nothing to commit."
+          else
+            git commit -m "Pull historical stats for backtesting"
+            git push
+          fi
