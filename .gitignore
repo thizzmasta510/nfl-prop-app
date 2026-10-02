@@ -1,0 +1,27 @@
+# Dependencies. Reinstalled with `npm install`, never committed.
+node_modules/
+
+# Wrangler local state and build output
+.wrangler/
+dist/
+
+# Python bytecode from the GitHub Action scripts
+__pycache__/
+*.pyc
+
+# Local environment files. Real secrets belong in `wrangler secret put`,
+# never in the repo.
+.env
+.dev.vars
+
+# OS clutter
+.DS_Store
+Thumbs.db
+
+# Local data exports from the app's backup button. These contain your own
+# pick history; keep them off a public repo.
+nfl-prop-backup-*.json
+
+# NOTE: weekly-stats.json, player-stats.json, and route-stats.json are
+# intentionally NOT ignored.
+# The GitHub Action commits them, and the Worker fetches them by raw URL.

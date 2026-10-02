@@ -1,0 +1,126 @@
+name: Compute weekly NFL stats
+
+on:
+  schedule:
+    - cron: "0 9 * * 2"
+    - cron: "0 17 * * 5"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-stats:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # nflreadpy is the actively maintained reader for nflverse data and is
+      # tried first by the scripts. nfl_data_py is installed only as a
+      # fallback; its download URLs 404 for the current season and it pins
+      # numpy<2.0, so it is not relied on.
+      #
+      # Installed with `|| true` so a resolution failure in the legacy package
+      # cannot block the run now that it is not the primary path.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel
+          pip install nflreadpy pandas pyarrow
+          pip install nfl_data_py || echo "nfl_data_py unavailable; continuing with nflreadpy only"
+          echo "--- installed ---"
+          pip list 2>/dev/null | grep -iE "nflread|nfl-data|nfl_data|pandas|polars|pyarrow|numpy" || true
+
+      # Prints what each package actually exposes, and the real column names,
+      # before any processing. The scripts probe for function names at runtime,
+      # so if a guess is wrong this is where the correct name appears.
+      # Prints what each package exposes and the real column names before any
+      # processing. Runs from inside github-action with the directory added to
+      # sys.path explicitly: a heredoc script reads from stdin, which does not
+      # put the working directory on the import path the way running a file does.
+      # Self-contained on purpose: calls nflreadpy directly rather than
+      # importing the shared loader, so a missing or misplaced file cannot
+      # obscure the actual question, which is whether the current season's
+      # data is reachable. Also lists the directory so a missing file is
+      # visible rather than inferred.
+      - name: Discover API and columns
+        run: |
+          echo "--- contents of github-action/ ---"
+          ls -la github-action/
+          echo
+          python - <<'PY'
+          import sys
+          import nflreadpy as nfl
+          print("nflreadpy version:", getattr(nfl, "version", "n/a"))
+          print("get_current_season():", nfl.get_current_season())
+          print("get_current_week():", nfl.get_current_week())
+
+          def probe(label, fn, season):
+              print(f"\n--- {label}, season {season} ---")
+              try:
+                  df = fn(seasons=[season])
+                  if hasattr(df, "to_pandas"):
+                      df = df.to_pandas()
+                  print(f"rows: {len(df)}")
+                  if len(df):
+                      print("columns:", sorted(df.columns.tolist()))
+                      if "week" in df.columns:
+                          print("weeks:", sorted(df["week"].dropna().unique().tolist()))
+                  return len(df)
+              except Exception as e:
+                  print(f"FAILED: {type(e).__name__}: {e}")
+                  return 0
+
+          season = int(nfl.get_current_season())
+          n_cur = probe("load_player_stats", nfl.load_player_stats, season)
+          if not n_cur:
+              probe("load_player_stats", nfl.load_player_stats, season - 1)
+          PY
+
+      - name: Compute player stat lines
+        run: cd github-action && python compute_player_stats.py && mv player-stats.json ../
+
+      - name: Compute weekly team/usage stats
+        run: cd github-action && python compute_weekly_stats.py && mv weekly-stats.json ../
+        continue-on-error: true
+
+      # Routes-run proxy from participation data. Marked continue-on-error
+      # because the exact schema of nflreadpy's participation data has not
+      # been verified against live data; the script degrades to a clearly
+      # labeled empty file with a printed reason if a column name assumption
+      # turns out wrong, rather than crashing. The printed column dump in this
+      # step's log is what determines whether anything needs adjusting.
+      - name: Compute routes-run proxy
+        run: cd github-action && python compute_route_stats.py && mv route-stats.json ../
+        continue-on-error: true
+
+      - name: Show what was produced
+        if: always()
+        run: |
+          for f in player-stats.json weekly-stats.json route-stats.json; do
+            if [ -f "$f" ]; then
+              echo "$f: $(wc -c < $f) bytes"
+              python -c "import json;d=json.load(open('$f'));print('  season',d.get('season'),'records',len(d.get('players',[])),'weeks',d.get('weeksIncluded'))"
+            else
+              echo "$f: NOT CREATED"
+            fi
+          done
+
+      - name: Commit and push results
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          for f in player-stats.json weekly-stats.json route-stats.json; do
+            [ -f "$f" ] && git add "$f"
+          done
+          if git diff --quiet --cached; then
+            echo "Nothing to commit."
+          else
+            git commit -m "Update NFL stat feeds"
+            git push
+          fi
