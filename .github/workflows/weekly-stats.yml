@@ -84,6 +84,12 @@ jobs:
       - name: Compute player stat lines
         run: cd github-action && python compute_player_stats.py && mv player-stats.json ../
 
+      # Last 10 regular-season games per player across this season and last,
+      # for the Tendency Matrix tab. Small on purpose so the Worker can parse it.
+      - name: Compute Tendency Matrix game logs
+        run: cd github-action && python compute_trend_logs.py && mv trend-logs.json ../
+        continue-on-error: true
+
       - name: Compute weekly team/usage stats
         run: cd github-action && python compute_weekly_stats.py && mv weekly-stats.json ../
         continue-on-error: true
@@ -101,7 +107,7 @@ jobs:
       - name: Show what was produced
         if: always()
         run: |
-          for f in player-stats.json weekly-stats.json route-stats.json; do
+          for f in player-stats.json weekly-stats.json route-stats.json trend-logs.json; do
             if [ -f "$f" ]; then
               echo "$f: $(wc -c < $f) bytes"
               python -c "import json;d=json.load(open('$f'));print('  season',d.get('season'),'records',len(d.get('players',[])),'weeks',d.get('weeksIncluded'))"
@@ -115,7 +121,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          for f in player-stats.json weekly-stats.json route-stats.json; do
+          for f in player-stats.json weekly-stats.json route-stats.json trend-logs.json; do
             [ -f "$f" ] && git add "$f"
           done
           if git diff --quiet --cached; then

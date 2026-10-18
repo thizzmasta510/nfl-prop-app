@@ -757,3 +757,83 @@ averaged when no v9 single score is present. Verified by simulation.
 - Added `DOCUMENTATION.md`: complete architecture, model formula reference,
   API reference, security guardrail reference, and known limitations.
 - Added this changelog.
+
+## Trend Grid (Oct 2026): hit rate by cutoff, last N games
+- New `src/trends.js`: per-player hit rates at fixed "X or more" cutoffs over
+  the last 3/5/10 regular-season games (spanning seasons), colored by rank
+  within each column. Pure functions, shared by the Worker and the backtest.
+- New `GET /api/trends` endpoint and a **Trend Grid** dashboard tab (market,
+  games, positions, min games, sort cutoff, "only players in my props").
+  The Line column comes from props you have entered.
+- New `github-action/compute_trend_logs.py` publishes `trend-logs.json`
+  (last 10 regular-season games per player, current + previous season); the
+  cron pulls it via `TREND_LOGS_URL`. Falls back to `player-stats.json`.
+- New `backtest/trend_backtest.mjs`. Result on 8,913 graded props (2025 +
+  2026 weeks 1-4, closing lines): last-5 hit rate added nothing to the
+  closing line (coefficient 0.007, 95% CI -0.18 to 0.21), and Overs on 5-for-5
+  streaks did worse than average (35.6% hit, -28% ROI). The grid describes
+  what happened; it is not a pick engine.
+- `npm test` runs `test/trends.test.mjs` (no-lookahead, staleness, sorting,
+  cross-season window, line matching, min games).
+
+## NBA Trend Grid (Oct 2026)
+- `src/trends.js` is now sport-aware (`SPORTS.nfl`, `SPORTS.nba`). NBA games are
+  ordered by date, regular season only, default window 10 games (max 20), players
+  dropped if their last game is 21+ days older than the newest game in the data.
+  Before opening night the window falls back to last season and says so.
+- NBA markets: points, rebounds, assists, threes, PRA, P+R, P+A, R+A, steals,
+  blocks, steals+blocks, turnovers. A Min (average minutes) column is shown.
+- New **NBA Trends** tab, `GET /api/trends?sport=nba`, and `GET/POST /api/nba-lines`
+  (paste "Player, stat, line"; fills the Line column and "only players in my lines").
+- New `github-action/compute_nba_logs.py` + `.github/workflows/nba-stats.yml`
+  (daily, nba_api / stats.nba.com) publish `nba-trend-logs.json`; the cron pulls it
+  via `NBA_TREND_LOGS_URL`.
+- `backtest/sgo_backfill.mjs --league NBA` (with `--discover` to list SGO's NBA
+  statIDs) and `backtest/trend_backtest.mjs --league nba`. NBA backtest not yet run:
+  needs an NBA backfill from your key.
+
+## Dashboard refresh (Oct 2026)
+- New look: sticky top bar, pill tabs grouped by league (NFL: Add Prop, Scored
+  Props, Top Picks, Trend Grid; NBA: Trend Grid), card sections, modern forms
+  and tables, automatic dark mode (follows the device setting), mobile layout.
+- **Validation Tracker tab removed** from the dashboard, with its Log / bulk-log
+  buttons on Scored Props. The tracker API endpoints and stored data are left in
+  place, so nothing is lost and Export backup still includes it.
+- "Refresh stat feeds" and "Export backup" moved to a **Data** menu in the top bar.
+- Scored Props rows now display in rank order.
+- Review fixes: single-row color bucket is neutral (was "worst"); parsed trend
+  files cached per isolate by R2 etag (CPU on the free plan); tests added for
+  unsorted input, rows without a season field, ties, and the cache.
+- Backtest: `--starters` and `--dropZeros` sensitivity flags.
+- Round-2 review fixes: non-finite stat values skipped at ingest; NBA `--history`
+  backtest path keyed by date; no silent name-only grouping in compute_trend_logs.py;
+  cache rewritten as one conditional R2 read (no head/get race); bounded body read on
+  /api/nba-lines; ridge + convergence guard in the backtest fit; NBA season label
+  boundary; "2025-26" season strings; `color-mix()` fallbacks for older Safari.
+- Round-3 review fixes: compute_trend_logs.py builds a NaN-safe per-row player key
+  (pandas was silently dropping rows with missing ids/positions); cache body check
+  matches R2's documented "R2Object with body undefined"; new key-alignment tests
+  for the backtest (NBA ET dates, NFL season rollover).
+
+## Security hardening + research positioning (Oct 2026)
+- New `src/security.js`: fail-closed auth gate on `/api/*` (503 if no APP_SECRET or
+  Cloudflare Access), per-IP password lockout (10 failures / 10 min; the empty login probe
+  is not counted), Cloudflare Access JWT verification (signature against team certs,
+  audience, issuer, expiry; also gates the page), and security headers on every response
+  (HSTS, no-referrer, frame-ancestors none, permissions policy, COOP/CORP, no-store).
+- Page CSP pins the inline script by SHA-256 hash; `unsafe-inline` removed for scripts.
+- `.gitignore`: odds backfills and key files. `SECURITY.md`: one-time setup steps.
+- **Trend grades (A+ to C)** in both trend grids: how consistently and by how much a
+  player finished above/below the entered line, ranked within the market, with caps
+  (fewer than 5 games caps at B+; a record within one game of even caps at B). Sort by
+  grade. Tooltip and footnote: describes the past, not a prediction or pick.
+- Language: "Top Picks" is now "Model Leaders"; columns "Model prob / Model side / Tier";
+  new About tab (method, backtest result, data sources, 21+, 1-800-GAMBLER) and a footer
+  disclaimer on every page. `POSITIONING.md` has the do/don't wording.
+- Tests: `test/security.test.mjs` (gate, lockout, Access JWT good/bad/tampered/expired,
+  CSP hash matches served script, headers) and trend-grade tests.
+
+## Rename (Oct 18, 2026)
+- "Trend Grid" is now **Tendency Matrix** everywhere it is shown (tabs, headings, About page,
+  docs). Internal names (`src/trends.js`, `/api/trends`, `trend-logs.json`) are unchanged so
+  existing data and links keep working. "Trend grades" are now **tendency grades** to match.

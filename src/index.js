@@ -1,10 +1,16 @@
 import { scoreProp, rankByTeam, calibration, matchPlayerStat,
-         annotateCorrelation, betPerformance, breakEvenRate } from "./model.js";
+         annotateCorrelation, betPerformance, breakEvenRate, propTypeToStatKey } from "./model.js";
+import { authorize, verifyAccessJwt, withSecurityHeaders, scriptHashFor, htmlCsp } from "./security.js";
+import { buildTrendGrid, linesFromProps, linesFromList, parseLinesText, MARKETS, SPORTS } from "./trends.js";
 
 const PROPS_KEY = "props.json";
 const TRACKER_KEY = "tracker.json";
 const STATS_KEY = "weekly-stats.json";
 const PLAYER_STATS_KEY = "player-stats.json";
+const TREND_LOGS_KEY = "trend-logs.json";
+const NBA_TREND_LOGS_KEY = "nba-trend-logs.json";
+const NBA_LINES_KEY = "nba-lines.json";
+const MAX_NBA_LINES = 300;
 const MAX_BODY_BYTES = 20_000; // generous for one form submission, blocks payload abuse
 const MAX_ARRAY_LEN = 2000; // hard ceiling on stored records, blocks storage-fill abuse
 const MAX_STRING_LEN = 200;
@@ -36,6 +42,45 @@ async function readJson(bucket, key, fallback) {
   } catch {
     return fallback;
   }
+}
+
+// Parsed-JSON cache for the large, rarely-changing trend files. A Worker isolate
+// is reused across requests, so this skips re-downloading and re-parsing a
+// multi-megabyte file on every Tendency Matrix load (JSON.parse of ~3 MB can exceed the
+// free plan's 10 ms CPU budget). One conditional R2 read per request: when the
+// stored etag still matches, R2 returns the object metadata without a body, so the
+// etag and the data always come from the same read (review C3: no head/get race).
+const JSON_CACHE = new Map();
+async function readJsonCached(bucket, key, fallback) {
+  const hit = JSON_CACHE.get(key);
+  const obj = hit ? await bucket.get(key, { onlyIf: { etagDoesNotMatch: hit.etag } }) : await bucket.get(key);
+  if (!obj) return fallback;                 // object does not exist
+  // Precondition failed (etag unchanged): R2 returns an R2Object with `body` undefined
+  // (docs: "get() returns an R2Object with body undefined"). null means the key is missing.
+  if (hit && (obj.body === undefined || typeof obj.text !== "function")) return hit.data;
+  let data;
+  try { data = JSON.parse(await obj.text()); } catch { return fallback; }
+  if (obj.etag) JSON_CACHE.set(key, { etag: obj.etag, data });
+  return data;
+}
+
+// Reads a request body as text, stopping once it exceeds `limit` bytes, so a
+// request without a content-length header can't make the Worker buffer an
+// arbitrarily large body (review C24). Returns null when too large.
+async function readBodyLimited(request, limit) {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks = []; let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) { try { await reader.cancel(); } catch {} return null; }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(size); let off = 0;
+  for (const c of chunks) { all.set(c, off); off += c.byteLength; }
+  return new TextDecoder().decode(all);
 }
 
 async function writeJson(bucket, key, data) {
@@ -107,7 +152,7 @@ const TRACKER_FIELDS = ["id","week","player","team","propType","lean","projectio
   // computable. Hit rate alone is misleading: 55% at -130 loses money.
   "played","odds","stake","opponent"];
 
-export default {
+const app = {
   async fetch(request, env) {
     const url = new URL(request.url);
     const { pathname } = url;
@@ -130,7 +175,7 @@ export default {
           "content-type": "text/html; charset=UTF-8",
           "x-content-type-options": "nosniff",
           "x-frame-options": "DENY",
-          "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
+          "content-security-policy": htmlCsp(await scriptHashFor(HTML)),
         },
       });
     }
@@ -360,6 +405,86 @@ export default {
       }, 200, origin);
     }
 
+    // ---- Tendency Matrix: hit rate by cutoff over each player's last N games ----
+    // NFL: GET /api/trends?stat=receptions&games=5&pos=WR,TE&min=5&sort=5&limit=25&week=6&slate=1
+    // NBA: GET /api/trends?sport=nba&stat=points&games=10&pos=G&date=2026-11-02&slate=1
+    // Describes what happened; it is not a forecast (see backtest/trend_backtest.mjs).
+    if (pathname === "/api/trends" && request.method === "GET") {
+      if (!checkAuth(request, env)) return json({ error: "unauthorized" }, 401, origin);
+      const q = url.searchParams;
+      const sport = q.get("sport") === "nba" ? "nba" : "nfl";
+      const markets = SPORTS[sport].markets;
+      const stat = q.get("stat") || (sport === "nba" ? "points" : "receptions");
+      if (!markets[stat]) return json({ error: "unknown stat", stats: Object.keys(markets) }, 400, origin);
+      let doc, source;
+      if (sport === "nba") {
+        doc = await readJsonCached(env.PROP_DATA, NBA_TREND_LOGS_KEY, null);
+        source = "nba-trend-logs.json";
+      } else {
+        // Prefer the cross-season trend file; fall back to this season's player stats.
+        doc = await readJsonCached(env.PROP_DATA, TREND_LOGS_KEY, null);
+        source = "trend-logs.json";
+        if (!doc || !Array.isArray(doc.players) || !doc.players.length) {
+          doc = await readJsonCached(env.PROP_DATA, PLAYER_STATS_KEY, null);
+          source = "player-stats.json (current season only)";
+        }
+      }
+      if (!doc || !Array.isArray(doc.players) || !doc.players.length) {
+        return json({ error: "no player stats available",
+          hint: sport === "nba" ? "Set NBA_TREND_LOGS_URL and POST /api/refresh-stats." : "Set TREND_LOGS_URL (or PLAYER_STATS_URL) and POST /api/refresh-stats." }, 503, origin);
+      }
+      // "2025-26" style seasons are accepted too (review C11).
+      const season = Number(doc.season) || Number(String(doc.season || "").split("-")[0]) || new Date().getUTCFullYear();
+      const clampInt = (v, lo, hi, d) => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+      const maxGames = sport === "nba" ? 20 : 10;
+      const games = clampInt(q.get("games"), 1, maxGames, SPORTS[sport].defaultGames);
+      const posParam = q.get("pos");
+      const positions = posParam === "ALL" ? [] : posParam ? posParam.toUpperCase().split(",").map((x) => x.trim()).filter(Boolean).slice(0, 6) : undefined;
+      let lines = {}, slatePlayers = [];
+      if (sport === "nba") {
+        const list = await readJson(env.PROP_DATA, NBA_LINES_KEY, []);
+        lines = linesFromList(list, stat);
+        slatePlayers = list.map((l) => l.player);
+      } else {
+        const props = await readJson(env.PROP_DATA, PROPS_KEY, []);
+        lines = linesFromProps(props, stat, propTypeToStatKey);
+        slatePlayers = props.map((p) => p.player);
+      }
+      const dateParam = q.get("date");
+      const cutoffs = markets[stat].cutoffs;
+      const sortParam = Number(q.get("sort"));
+      const grid = buildTrendGrid(doc.players, {
+        sport, stat, season, games,
+        minGames: clampInt(q.get("min"), 1, games, games),
+        beforeWeek: sport === "nfl" && q.get("week") ? clampInt(q.get("week"), 1, 22, 99) : undefined,
+        beforeDate: sport === "nba" && /^\d{4}-\d{2}-\d{2}$/.test(dateParam || "") ? dateParam : undefined,
+        positions,
+        sortBy: q.get("sort") === "grade" ? "grade" : cutoffs.includes(sortParam) ? sortParam : undefined,
+        limit: clampInt(q.get("limit"), 1, 100, 25),
+        lines,
+        // slate=1 restricts rows to players you have lines/props entered for.
+        players: q.get("slate") === "1" ? slatePlayers : null,
+      });
+      return json({ ...grid, source, generatedAt: doc.generatedAt || null, latestGameDate: doc.latestGameDate || null,
+        markets: Object.fromEntries(Object.entries(markets).map(([k, v]) => [k, v.label])) }, 200, origin);
+    }
+
+    // ---- NBA lines for the NBA Tendency Matrix (Line column and "my slate") ----
+    // GET returns the list. POST { text: "Player, stat, line\n..." } replaces it.
+    if (pathname === "/api/nba-lines" && (request.method === "GET" || request.method === "POST")) {
+      if (!checkAuth(request, env)) return json({ error: "unauthorized" }, 401, origin);
+      if (request.method === "GET") return json(await readJson(env.PROP_DATA, NBA_LINES_KEY, []), 200, origin);
+      const raw = await readBodyLimited(request, MAX_BODY_BYTES);
+      if (raw === null) return json({ error: `paste too large: max ${MAX_NBA_LINES} lines (20 KB)` }, 413, origin);
+      let body;
+      try { body = JSON.parse(raw); } catch { return json({ error: "invalid json" }, 400, origin); }
+      const text = typeof body?.text === "string" ? body.text : "";
+      const { ok, bad } = parseLinesText(text, "nba");
+      if (ok.length > MAX_NBA_LINES) return json({ error: `too many lines (max ${MAX_NBA_LINES})` }, 400, origin);
+      await writeJson(env.PROP_DATA, NBA_LINES_KEY, ok);
+      return json({ saved: ok.length, rejected: bad.slice(0, 50) }, 200, origin);
+    }
+
     // ---- Manually trigger the stats refresh the cron does on schedule ----
     if (pathname === "/api/refresh-stats" && request.method === "POST") {
       if (!checkAuth(request, env)) return json({ error: "unauthorized" }, 401, origin);
@@ -387,6 +512,30 @@ export default {
   },
 };
 
+// Entry point. Every API request passes the security gate first (Cloudflare Access
+// and/or password, with lockout; fail closed when neither is configured), and every
+// response gets the security headers. See src/security.js.
+export default {
+  async fetch(request, env, ctx) {
+    const { pathname } = new URL(request.url);
+    if (request.method !== "OPTIONS") {
+      if (pathname.startsWith("/api/")) {
+        const auth = await authorize(request, env);
+        if (!auth.ok) return withSecurityHeaders(json({ error: auth.error }, auth.status, corsOrigin(request, env)));
+      } else if (env.ACCESS_AUD && env.ACCESS_TEAM_DOMAIN) {
+        // With Access on, the page itself also requires a valid Access session,
+        // so the workers.dev URL can't be used to skip the login.
+        const v = await verifyAccessJwt(request, env);
+        if (!v.ok) return withSecurityHeaders(new Response("Cloudflare Access login required", { status: 403 }));
+      }
+    }
+    return withSecurityHeaders(await app.fetch(request, env, ctx));
+  },
+  async scheduled(event, env, ctx) {
+    return app.scheduled(event, env, ctx);
+  },
+};
+
 // Fetches both published feeds and stores them in R2. Shared by the cron
 // handler and the manual /api/refresh-stats endpoint so there is one code path.
 //
@@ -400,6 +549,8 @@ async function refreshExternalStats(env) {
     // anything descriptive.
     { name: "weekly-stats", url: String(env.STATS_FEED_URL || "").trim(), key: STATS_KEY },
     { name: "player-stats", url: String(env.PLAYER_STATS_URL || "").trim(), key: PLAYER_STATS_KEY },
+    { name: "trend-logs", url: String(env.TREND_LOGS_URL || "").trim(), key: TREND_LOGS_KEY },
+    { name: "nba-trend-logs", url: String(env.NBA_TREND_LOGS_URL || "").trim(), key: NBA_TREND_LOGS_KEY },
   ];
   const results = [];
 
@@ -459,74 +610,159 @@ const HTML = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>NFL Player Prop Model</title>
 <style>
-  :root { --navy:#1F4E78; --bg:#F2F6FA; --line:#BFBFBF; --green:#2E7D32; --red:#B7472A; }
-  * { box-sizing: border-box; }
-  body { font-family: Arial, Helvetica, sans-serif; margin:0; background:#fff; color:#222; }
-  header { background: var(--navy); color:#fff; padding:16px 20px; }
-  header h1 { margin:0; font-size:20px; }
-  header p { margin:4px 0 0; font-size:13px; opacity:.85; }
-  nav { display:flex; gap:8px; padding:10px 20px; background:#eef2f6; flex-wrap:wrap; }
-  nav button { background:#fff; border:1px solid var(--line); border-radius:6px; padding:8px 14px;
-    cursor:pointer; font-size:13px; }
-  nav button.active { background: var(--navy); color:#fff; border-color:var(--navy); }
-  main { padding: 16px 20px 60px; max-width:1100px; margin:0 auto; }
-  section { display:none; }
-  section.active { display:block; }
-  table { border-collapse: collapse; width:100%; font-size:12.5px; margin-top:10px; }
-  th, td { border:1px solid var(--line); padding:6px 8px; text-align:left; }
-  th { background: var(--navy); color:#fff; position:sticky; top:0; }
-  tr:nth-child(even) { background: var(--bg); }
-  .over { color: var(--green); font-weight:bold; }
-  .under { color: var(--red); font-weight:bold; }
-  form.grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(160px,1fr)); gap:8px; margin-top:10px; }
-  form.grid label { font-size:11px; color:#555; display:block; }
-  form.grid input, form.grid select { width:100%; padding:5px; font-size:12.5px; border:1px solid var(--line); border-radius:4px; }
-  .row-actions button { font-size:11px; padding:3px 8px; margin-right:4px; cursor:pointer; }
-  .submit-btn { margin-top:12px; background:var(--navy); color:#fff; border:none; padding:9px 18px;
-    border-radius:6px; cursor:pointer; font-size:13px; }
-  .hint { font-size:12px; color:#666; margin-top:6px; }
-  .pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; color:#fff; }
-  .pill.High { background:#2E7D32; }
-  .pill.Medium { background:#B7950B; }
-  .pill.Low { background:#888; }
-  .stat-card { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px 14px;
-    min-width:130px; text-align:center; }
-  .stat-card .num { font-size:20px; font-weight:bold; color:var(--navy); }
-  .stat-card .label { font-size:11px; color:#555; margin-top:2px; }
-  .stat-card.warn .num { color:var(--red); }
-  .stat-card.good .num { color:var(--green); }
-  #loginScreen { position:fixed; inset:0; background:#fff; z-index:999; display:flex;
-    align-items:center; justify-content:center; flex-direction:column; gap:12px; padding:20px; }
-  #loginScreen input { padding:10px; font-size:15px; border:1px solid var(--line); border-radius:6px; width:240px; }
-  #loginScreen button { padding:10px 20px; background:var(--navy); color:#fff; border:none;
-    border-radius:6px; font-size:15px; cursor:pointer; }
+  :root {
+    --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#F8FAFC; --ink:#0F172A; --ink-2:#475569; --muted:#64748B;
+    --line:#E2E8F0; --line-2:#CBD5E1; --accent:#2563EB; --accent-ink:#FFFFFF; --accent-soft:#EFF4FF;
+    --green:#15803D; --green-soft:#DCFCE7; --red:#B91C1C; --red-soft:#FEE2E2; --amber:#B45309; --amber-soft:#FEF3C7;
+    --heat0:#F9C9C4; --heat1:#FCE4E1; --heat2:#F1F5F9; --heat3:#D9F2E1; --heat4:#B4E3C3; --bar:#2563EB; --bar-track:#E2E8F0;
+    --shadow:0 1px 2px rgba(15,23,42,.06), 0 4px 16px rgba(15,23,42,.04); --radius:14px;
+    --navy: var(--accent); /* legacy name used by inline styles */
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#0B0F17; --surface:#121826; --surface-2:#0F1522; --ink:#E5E9F0; --ink-2:#AAB4C3; --muted:#8792A3;
+      --line:#222B3B; --line-2:#2E3A4F; --accent:#5B8CFF; --accent-ink:#0B0F17; --accent-soft:#18233A;
+      --green:#4ADE80; --green-soft:#12301F; --red:#F87171; --red-soft:#3A1717; --amber:#FBBF24; --amber-soft:#33270C;
+      --heat0:#5A2323; --heat1:#3A2024; --heat2:#1A2130; --heat3:#1D3A2A; --heat4:#24553A; --bar:#5B8CFF; --bar-track:#2A3446;
+      --shadow:0 1px 2px rgba(0,0,0,.4); color-scheme: dark;
+    }
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; background:var(--bg); color:var(--ink); }
+  body { font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing:antialiased; }
+  .topbar { position:sticky; top:0; z-index:20; background:var(--surface); background:color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(10px); border-bottom:1px solid var(--line); }
+  .topbar-inner { max-width:1240px; margin:0 auto; padding:12px 20px; display:flex; align-items:center; gap:14px; }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:-.01em; font-size:16px; }
+  .brand .mark { width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,var(--accent),#7C3AED);
+    color:#fff; display:grid; place-items:center; font-size:13px; font-weight:800; }
+  .brand small { font-weight:600; color:var(--muted); font-size:12px; border:1px solid var(--line); border-radius:999px; padding:1px 8px; margin-left:4px; }
+  .spacer { flex:1; }
+  nav { max-width:1240px; margin:0 auto; padding:0 20px 10px; display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; }
+  nav::-webkit-scrollbar { display:none; }
+  nav .group { font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; align-self:center; padding:0 4px 0 10px; }
+  nav .group:first-child { padding-left:0; }
+  nav button { background:transparent; border:1px solid transparent; color:var(--ink-2); border-radius:999px; padding:7px 14px;
+    font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  nav button:hover { background:var(--surface-2); color:var(--ink); }
+  nav button.active { background:var(--accent-soft); color:var(--accent); border-color:var(--line-2); border-color:color-mix(in srgb, var(--accent) 25%, transparent); }
+  main { max-width:1240px; margin:0 auto; padding:22px 20px 80px; }
+  section { display:none; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); padding:22px 22px 26px; }
+  section.active { display:block; animation: fade .18s ease-out; }
+  @keyframes fade { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+  h2 { margin:0 0 4px; font-size:20px; letter-spacing:-.015em; }
+  .hint { font-size:12.5px; color:var(--muted); margin:6px 0; }
+  code { background:var(--surface-2); border:1px solid var(--line); border-radius:6px; padding:0 5px; font-size:12px; }
+  button { font:inherit; font-size:13px; font-weight:600; border-radius:10px; border:1px solid var(--line-2); background:var(--surface);
+    color:var(--ink); padding:7px 14px; cursor:pointer; transition: background .12s, border-color .12s; }
+  button:hover { background:var(--surface-2); }
+  button:disabled { opacity:.55; cursor:default; }
+  .btn-primary, .submit-btn, #tgRefresh, #nbRefresh, #refreshScored, #refreshTop, #loginBtn, #nbSaveLines {
+    background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn-primary:hover, .submit-btn:hover, #tgRefresh:hover, #nbRefresh:hover, #refreshScored:hover, #refreshTop:hover, #loginBtn:hover, #nbSaveLines:hover {
+    background:var(--accent); filter:brightness(.92); }
+  .submit-btn { margin-top:16px; padding:10px 20px; }
+  input, select, textarea { font:inherit; font-size:13px; color:var(--ink); background:var(--surface); border:1px solid var(--line-2);
+    border-radius:9px; padding:7px 9px; outline:none; transition: border-color .12s, box-shadow .12s; }
+  input:focus, select:focus, textarea:focus { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+  input[type=checkbox] { width:15px; height:15px; accent-color:var(--accent); vertical-align:-2px; }
+  form.grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(190px,1fr)); gap:12px 14px; margin-top:16px; }
+  form.grid label { font-size:11.5px; font-weight:600; color:var(--ink-2); display:block; margin-bottom:4px; }
+  form.grid input, form.grid select { width:100%; }
+  .toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:14px 0 6px; }
+  .tg-controls { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin:16px 0 10px; padding:12px;
+    background:var(--surface-2); border:1px solid var(--line); border-radius:12px; }
+  .tg-controls label { font-size:11.5px; font-weight:600; color:var(--ink-2); display:block; margin-bottom:4px; }
+  .tablewrap { overflow-x:auto; margin-top:12px; border:1px solid var(--line); border-radius:12px; }
+  table { border-collapse:separate; border-spacing:0; width:100%; font-size:13px; }
+  .tablewrap table { margin:0; }
+  th, td { padding:9px 10px; text-align:left; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { position:sticky; top:0; background:var(--surface-2); color:var(--ink-2); font-size:11.5px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.05em; z-index:1; }
+  tr:last-child td { border-bottom:none; }
+  @supports (color: color-mix(in srgb, red 50%, blue)) { table tr:hover td { background:color-mix(in srgb, var(--accent) 4%, transparent); } }
+  .over { color:var(--green); font-weight:700; }
+  .under { color:var(--red); font-weight:700; }
+  .row-actions button { font-size:12px; padding:4px 10px; border-radius:8px; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:700; }
+  .pill.High { background:var(--green-soft); color:var(--green); }
+  .pill.Medium { background:var(--amber-soft); color:var(--amber); }
+  .pill.Low { background:var(--surface-2); color:var(--muted); border:1px solid var(--line); }
+  /* Tendency Matrix: colors rank each column among the players shown (not a forecast). */
+  table.tg td.cell { text-align:center; font-weight:700; min-width:68px; font-variant-numeric:tabular-nums; }
+  table.tg td.c0 { background:var(--heat0); } table.tg td.c1 { background:var(--heat1); } table.tg td.c2 { background:var(--heat2); }
+  table.tg td.c3 { background:var(--heat3); } table.tg td.c4 { background:var(--heat4); }
+  table.tg tr:hover td.cell { filter:brightness(.97); }
+  table.tg .bar { height:4px; background:var(--bar-track); border-radius:3px; margin-top:5px; overflow:hidden; }
+  table.tg .bar > i { display:block; height:4px; background:var(--bar); border-radius:3px; }
+  table.tg th.sorted { color:var(--accent); }
+  table.tg td.vals { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .grade { display:inline-block; min-width:30px; text-align:center; padding:2px 7px; border-radius:7px; font-weight:800; font-size:12px; }
+  .grade.g-A { background:var(--heat4); color:var(--ink); } .grade.g-B { background:var(--heat2); color:var(--ink); border:1px solid var(--line); }
+  .grade.g-C { background:var(--heat1); color:var(--ink); }
+  footer.disclaimer { max-width:1240px; margin:0 auto; padding:0 20px 40px; color:var(--muted); font-size:12px; }
+  .about p, .about li { max-width:860px; }
+  details summary { cursor:pointer; }
+  .menu { position:relative; }
+  .menu-panel { display:none; position:absolute; right:0; top:calc(100% + 8px); width:300px; background:var(--surface);
+    border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 32px rgba(15,23,42,.16); padding:10px; z-index:30; }
+  .menu.open .menu-panel { display:block; }
+  .menu-panel button { width:100%; text-align:left; margin:2px 0; border-color:transparent; }
+  .menu-panel button:hover { border-color:var(--line); }
+  #dataOut { font-size:12.5px; margin-top:6px; max-height:260px; overflow:auto; }
+  #dataOut table th, #dataOut table td { padding:5px 6px; white-space:normal; }
+  #loginScreen { position:fixed; inset:0; background:var(--bg); z-index:999; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .login-card { width:100%; max-width:360px; background:var(--surface); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow);
+    padding:28px; display:flex; flex-direction:column; gap:12px; }
+  .login-card h2 { display:flex; align-items:center; gap:10px; }
+  .login-card input { width:100%; padding:10px 12px; font-size:15px; }
+  .login-card button { padding:10px; font-size:14px; }
   #loginError { color:var(--red); font-size:13px; min-height:18px; }
   #appRoot { display:none; }
+  @media (max-width: 640px) { section { padding:16px; border-radius:12px; } main { padding:14px 12px 60px; } .topbar-inner, nav { padding-left:12px; padding-right:12px; } }
 </style>
 </head>
 <body>
 <div id="loginScreen">
-  <h2 style="margin:0; color:#1F4E78;">NFL Player Prop Model</h2>
-  <p style="margin:0; color:#555; font-size:13px;">Enter password to continue (leave blank if none was set)</p>
-  <input type="password" id="loginInput" placeholder="Password">
-  <button id="loginBtn">Enter</button>
-  <div id="loginError"></div>
+  <div class="login-card">
+    <h2><span class="brand"><span class="mark">PM</span></span>Prop Model</h2>
+    <p class="hint" style="margin:0">Enter your password (leave blank if none was set).</p>
+    <input type="password" id="loginInput" placeholder="Password" autocomplete="current-password">
+    <button id="loginBtn">Enter</button>
+    <div id="loginError"></div>
+  </div>
 </div>
 <div id="appRoot">
-<header>
-  <h1>NFL Player Prop Model</h1>
-  <p>Weighted projections, probability of Over/Under, and a live results tracker. Backed by Cloudflare R2.</p>
-</header>
-<nav>
-  <button data-tab="input" class="active">Add / Edit Prop</button>
-  <button data-tab="scored">All Scored Props</button>
-  <button data-tab="top">Top Picks</button>
-  <button data-tab="tracker">Validation Tracker</button>
-</nav>
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="mark">PM</span>Prop Model <small>NFL &middot; NBA</small></div>
+    <div class="spacer"></div>
+    <div class="menu" id="dataMenu">
+      <button id="dataMenuBtn" aria-haspopup="true" aria-expanded="false">Data &#9662;</button>
+      <div class="menu-panel" role="menu">
+        <button id="refreshStats" role="menuitem">Refresh stat feeds</button>
+        <button id="exportData" role="menuitem">Export backup</button>
+        <div id="dataOut"></div>
+      </div>
+    </div>
+  </div>
+  <nav>
+    <span class="group">NFL</span>
+    <button data-tab="input" class="active">Add Prop</button>
+    <button data-tab="scored">Scored Props</button>
+    <button data-tab="top">Model Leaders</button>
+    <button data-tab="trends">Tendency Matrix</button>
+    <span class="group">NBA</span>
+    <button data-tab="nbatrends">Tendency Matrix</button>
+    <span class="group">Info</span>
+    <button data-tab="about">About</button>
+  </nav>
+</div>
 <main>
 
   <section id="input" class="active">
-    <h2>Weekly Input</h2>
+    <h2>Add a prop</h2>
     <p class="hint">Fill in what you know. Leave Games Played / Est. Std Dev blank if unsure; the model falls back gracefully.</p>
     <form class="grid" id="propForm">
       <div><label>Week</label><input name="week" type="number" value="1" required></div>
@@ -568,65 +804,89 @@ const HTML = `<!doctype html>
   </section>
 
   <section id="scored">
-    <h2>All Scored Props</h2>
-    <button id="refreshScored">Refresh</button>
-    <div style="margin:10px 0; padding:10px; background:var(--bg); border:1px solid var(--line); border-radius:8px;">
-      <label style="font-size:12.5px;">Week for logging: <input id="bulkWeek" type="number" style="width:60px" placeholder="e.g. 2"></label>
-      <button id="selectTopN" style="margin-left:8px; padding:5px 10px; cursor:pointer;">Select top <input id="topNCount" type="number" value="15" style="width:45px"></button>
-      <button id="selectAllRows" style="margin-left:6px; padding:5px 10px; cursor:pointer;">Select all</button>
-      <button id="selectNoneRows" style="padding:5px 10px; cursor:pointer;">Clear</button>
-      <button id="bulkLogBtn" style="margin-left:6px; padding:5px 14px; cursor:pointer; background:var(--navy); color:#fff; border:none; border-radius:5px;">Log selected</button>
-      <div id="bulkLogOut" style="margin-top:6px; font-size:12.5px;"></div>
-    </div>
-    <div id="scoredTableWrap"></div>
+    <h2>Scored props</h2>
+    <p class="hint">Every saved prop with the model's projection, spread and side, ranked by the model's probability.</p>
+    <div class="toolbar"><button id="refreshScored">Refresh</button></div>
+    <div id="scoredTableWrap" class="tablewrap"></div>
   </section>
 
   <section id="top">
-    <h2>Top Picks (ranked by probability)</h2>
-    <label class="hint">Show top: <input id="topN" type="number" value="15" style="width:60px"></label>
-    <button id="refreshTop">Refresh</button>
-    <div id="topTableWrap"></div>
+    <h2>Model leaders</h2>
+    <p class="hint">Props you entered, ordered by the model's own probability. This is a research view, not picks: in testing the model did not beat closing lines.</p>
+    <div class="toolbar"><label class="hint" style="margin:0">Show top <input id="topN" type="number" value="15" style="width:64px"></label><button id="refreshTop">Refresh</button></div>
+    <div id="topTableWrap" class="tablewrap"></div>
   </section>
 
-  <section id="tracker">
-    <h2>Validation Tracker</h2>
-    <p class="hint">Log every pick you actually make. This is how you find out if the model has real edge (closing line value + hit rate) over time.</p>
-    <form class="grid" id="trackerForm">
-      <div><label>Week</label><input name="week" type="number" value="1"></div>
-      <div><label>Player</label><input name="player" required></div>
-      <div><label>Team</label><input name="team"></div>
-      <div><label>Prop Type</label><input name="propType"></div>
-      <div><label>My Lean</label><select name="lean"><option>OVER</option><option>UNDER</option></select></div>
-      <div><label>My Projection</label><input name="projection" type="number" step="0.1"></div>
-      <div><label>Opening Line</label><input name="openingLine" type="number" step="0.5"></div>
-      <div><label>Closing Line</label><input name="closingLine" type="number" step="0.5"></div>
-      <div><label>Actual Result</label><input name="actual" type="number" step="0.1"></div>
-      <div><label>Confidence (from model)</label>
-        <select name="confidence"><option>High</option><option>Medium</option><option>Low</option></select>
-      </div>
-      <div><label>Claimed Prob (0-1, from model at pick time)</label><input name="claimedProb" type="number" step="0.001" min="0" max="1" placeholder="e.g. 0.642"></div>
-      <div><label>Actually Played?</label><select name="played"><option value="">-</option><option>Y</option><option>N</option></select></div>
-      <div><label>Odds (American, e.g. -115)</label><input name="odds" type="number" step="1" placeholder="-110"></div>
-      <div><label>Stake (units)</label><input name="stake" type="number" step="0.1" placeholder="1"></div>
-      <div><label>Notes</label><input name="notes"></div>
-    </form>
-    <button class="submit-btn" id="saveTracker">Log Pick</button>
-    <div style="margin:14px 0; padding:12px; background:var(--bg); border:1px solid var(--line); border-radius:8px;">
-      <b style="font-size:13px">Auto-grade results</b>
-      <p class="hint" style="margin:4px 0 8px">Fills in actual results from published NFL stats for picks that don't have one yet. Preview first &mdash; anything it can't match cleanly is listed for manual entry rather than guessed at.</p>
-      <button id="autogradeDry" style="padding:7px 14px; margin-right:6px; cursor:pointer;">Preview</button>
-      <button id="autogradeApply" style="padding:7px 14px; margin-right:6px; cursor:pointer; background:var(--navy); color:#fff; border:none; border-radius:5px;">Apply</button>
-      <button id="refreshStats" style="padding:7px 14px; cursor:pointer;">Refresh stat feed</button>
-      <button id="exportData" style="padding:7px 14px; margin-left:6px; cursor:pointer;">Export backup</button>
-      <div id="autogradeOut" style="margin-top:10px; font-size:12.5px;"></div>
+  <section id="trends">
+    <h2>NFL Tendency Matrix</h2>
+    <p class="hint">How often each player reached each number in his last N regular-season games. Colors rank each column among the players shown. <b>Not a forecast:</b> in the backtest, a player's recent hit rate added nothing to the closing line, and Overs on 5-for-5 streaks did worse than average.</p>
+    <div class="tg-controls">
+      <div><label>Market</label><select id="tgStat">
+        <option value="receptions">Receptions</option><option value="receiving_yards">Receiving Yards</option>
+        <option value="targets">Targets</option><option value="rushing_yards">Rushing Yards</option>
+        <option value="carries">Carries</option><option value="rush_rec_yards">Rush + Rec Yards</option>
+        <option value="passing_yards">Passing Yards</option><option value="completions">Completions</option>
+        <option value="attempts">Pass Attempts</option><option value="passing_tds">Passing TDs</option>
+      </select></div>
+      <div><label>Games</label><select id="tgGames"><option>3</option><option selected>5</option><option>10</option></select></div>
+      <div><label>Positions (blank = market default, ALL = all)</label><input id="tgPos" placeholder="WR,TE" style="width:110px"></div>
+      <div><label>Min games</label><input id="tgMin" type="number" min="1" max="10" placeholder="auto" style="width:70px"></div>
+      <div><label>Sort by</label><input id="tgSort" placeholder="cutoff, e.g. 5" style="width:110px"></div>
+      <div><label><input type="checkbox" id="tgSortGrade"> Sort by tendency grade</label></div>
+      <div><label>Rows</label><input id="tgLimit" type="number" value="25" style="width:60px"></div>
+      <div><label><input type="checkbox" id="tgSlate"> Only players in my props</label></div>
+      <div><button id="tgRefresh">Refresh</button></div>
     </div>
-    <div id="hitRateCards" style="display:flex; gap:10px; flex-wrap:wrap; margin:14px 0;"></div>
-    <div id="trackerTableWrap"></div>
-    <div id="trackerSummary" class="hint"></div>
-    <div id="calibrationWrap" style="margin-top:18px"></div>
+    <div id="tgWrap" class="tablewrap"></div>
+  </section>
+
+  <section id="nbatrends">
+    <h2>NBA Tendency Matrix</h2>
+    <p class="hint">How often each player reached each number in his last N regular-season games (default 10). Colors rank each column among the players shown. <b>Not a forecast.</b> Before the new season has games, the window uses last season.</p>
+    <div class="tg-controls">
+      <div><label>Market</label><select id="nbStat">
+        <option value="points">Points</option><option value="rebounds">Rebounds</option><option value="assists">Assists</option>
+        <option value="threes">3-Pointers Made</option><option value="pra">Pts + Reb + Ast</option><option value="pr">Pts + Reb</option>
+        <option value="pa">Pts + Ast</option><option value="ra">Reb + Ast</option><option value="steals">Steals</option>
+        <option value="blocks">Blocks</option><option value="stocks">Steals + Blocks</option><option value="turnovers">Turnovers</option>
+      </select></div>
+      <div><label>Games</label><select id="nbGames"><option>5</option><option selected>10</option><option>15</option><option>20</option></select></div>
+      <div><label>Positions (G, F, C; blank = all)</label><input id="nbPos" placeholder="G,F,C" style="width:90px"></div>
+      <div><label>Min games</label><input id="nbMin" type="number" min="1" max="20" placeholder="auto" style="width:70px"></div>
+      <div><label>Sort by</label><input id="nbSort" placeholder="cutoff, e.g. 5" style="width:110px"></div>
+      <div><label><input type="checkbox" id="nbSortGrade"> Sort by tendency grade</label></div>
+      <div><label>Rows</label><input id="nbLimit" type="number" value="25" style="width:60px"></div>
+      <div><label><input type="checkbox" id="nbSlate"> Only players in my lines</label></div>
+      <div><button id="nbRefresh">Refresh</button></div>
+    </div>
+    <details style="margin:6px 0 10px">
+      <summary class="hint" style="cursor:pointer">My NBA lines (fills the Line column)</summary>
+      <p class="hint">One per line: <code>Player, stat, line</code>, e.g. <code>Jalen Brunson, points, 26.5</code>. Stats: points, rebounds, assists, threes, pra, pr, pa, ra, steals, blocks, stocks, turnovers. Saving replaces the list.</p>
+      <textarea id="nbLines" rows="6" style="width:100%; font-family:monospace; font-size:12px"></textarea>
+      <button id="nbSaveLines" style="margin-top:6px">Save lines</button> <span id="nbLinesOut" class="hint"></span>
+    </details>
+    <div id="nbWrap" class="tablewrap"></div>
+  </section>
+
+  <section id="about" class="about">
+    <h2>About this tool</h2>
+    <p><b>Prop Model is a research tool.</b> It shows how players have performed recently (Tendency Matrices), what a statistical model projects for props you enter, and how one-sided each player's record has been against a line (tendency grades). It does not sell, offer or recommend picks, and nothing here is betting, financial or legal advice.</p>
+    <h3>What the numbers mean</h3>
+    <ul>
+      <li><b>Tendency Matrix:</b> the share of a player's last N regular-season games in which he reached each number. Colors rank each column among the players shown.</li>
+      <li><b>Tendency grade (A+ to C):</b> how consistently and by how much a player finished above or below the line you entered, ranked against the other lines in that market. Fewer than 5 games caps the grade at B+, and a record within one game of even caps it at B. It describes the past only.</li>
+      <li><b>Model probability:</b> the model's estimate for a prop you entered. It is an estimate, not a forecast you should rely on.</li>
+    </ul>
+    <h3>How well it works</h3>
+    <p>Tested on 8,913 NFL props with closing lines (2025 season and 2026 weeks 1&ndash;4): a player's recent record against the line added no reliable information beyond the closing line itself, and the model's probabilities did not beat the market. Grades and projections are shown for research, not because they predict results.</p>
+    <h3>Data</h3>
+    <p>NFL statistics from nflverse; NBA statistics from the NBA's public stats site via nba_api; defensive ratings you enter may come from third parties such as FTN (DVOA). Each source has its own terms of use. This tool is for personal, non-commercial use.</p>
+    <h3>Responsible gambling</h3>
+    <p>If you choose to bet, you must be of legal age where you live (21+ in most U.S. states). If you or someone you know has a gambling problem, call or text <b>1-800-GAMBLER</b>.</p>
   </section>
 
 </main>
+<footer class="disclaimer">Research and entertainment only. No picks are sold or offered; tendency grades and model numbers describe data and do not predict results. 21+. Gambling problem? Call 1-800-GAMBLER.</footer>
 </div>
 
 <script>
@@ -680,15 +940,16 @@ document.getElementById("loginInput").addEventListener("keydown", (e) => {
 // for the user to type into, no auto-firing popups that mobile browsers block.
 attemptLogin(SECRET, false);
 
-document.querySelectorAll("nav button").forEach(btn => {
+document.querySelectorAll("nav button[data-tab]").forEach(btn => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll("nav button[data-tab]").forEach(b => b.classList.remove("active"));
     document.querySelectorAll("section").forEach(s => s.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById(btn.dataset.tab).classList.add("active");
     if (btn.dataset.tab === "scored") loadScored();
     if (btn.dataset.tab === "top") loadTop();
-    if (btn.dataset.tab === "tracker") loadTracker();
+    if (btn.dataset.tab === "trends") loadTrends();
+    if (btn.dataset.tab === "nbatrends") { loadNbaLines(); loadNbaTrends(); }
   });
 });
 
@@ -715,55 +976,6 @@ async function loadScored() {
 }
 document.getElementById("refreshScored").addEventListener("click", loadScored);
 
-// "Select top N" respects the same probability ranking shown in the # column,
-// so it matches what "top 15" means everywhere else in the app.
-document.getElementById("selectTopN").addEventListener("click", () => {
-  const n = Number(document.getElementById("topNCount").value) || 15;
-  document.querySelectorAll(".rowSelect").forEach(cb => {
-    cb.checked = Number(cb.dataset.rank) <= n;
-  });
-});
-document.getElementById("selectAllRows").addEventListener("click", () => {
-  document.querySelectorAll(".rowSelect").forEach(cb => cb.checked = true);
-});
-document.getElementById("selectNoneRows").addEventListener("click", () => {
-  document.querySelectorAll(".rowSelect").forEach(cb => cb.checked = false);
-});
-
-document.getElementById("bulkLogBtn").addEventListener("click", async () => {
-  const out = document.getElementById("bulkLogOut");
-  const week = document.getElementById("bulkWeek").value;
-  const selected = [...document.querySelectorAll(".rowSelect:checked")];
-  if (!selected.length) { out.innerHTML = "<span style='color:var(--red)'>Nothing selected.</span>"; return; }
-
-  const items = selected.map(cb => {
-    let payload;
-    try { payload = JSON.parse(cb.dataset.payload); } catch { return null; }
-    // The week field on the scored row may be blank if it wasn't entered on
-    // the prop; the week typed above fills that gap so grading, which keys
-    // on week, always has one to work with.
-    if (week) payload.week = Number(week);
-    return payload;
-  }).filter(Boolean);
-
-  out.innerHTML = "<span class='hint'>Logging " + items.length + " pick(s)...</span>";
-  const res = await fetch(API + "/api/tracker/bulk", {
-    method: "POST", headers: authHeaders({ "content-type": "application/json" }),
-    body: JSON.stringify({ items })
-  });
-  const d = await res.json();
-  if (!res.ok) { out.innerHTML = "<span style='color:var(--red)'>" + esc(d.error || "failed") + "</span>"; return; }
-
-  let html = "<b>Logged " + d.addedCount + "</b>, skipped " + d.skippedCount +
-    (d.skippedCount ? " (already logged this week, or missing data)" : "") + ".";
-  if (d.skipped.length) {
-    html += "<ul style='margin:4px 0 0 18px; padding:0;'>";
-    for (const s of d.skipped) html += "<li>" + esc(s.player) + ": " + esc(s.reason) + "</li>";
-    html += "</ul>";
-  }
-  out.innerHTML = html;
-  document.querySelectorAll(".rowSelect:checked").forEach(cb => cb.checked = false);
-});
 
 async function loadTop() {
   const n = document.getElementById("topN").value || 15;
@@ -776,25 +988,22 @@ document.getElementById("refreshTop").addEventListener("click", loadTop);
 
 function renderScoredTable(rows, showActions) {
   if (!rows.length) return "<p class='hint'>No props saved yet.</p>";
-  // Rank once by probability, matching how Top Picks and team rank already
+  // Rank once by probability, matching how Model Leaders and team rank already
   // sort, so "select top N" here means the same thing it means everywhere
   // else in the app rather than the order props happened to be entered.
   const ranked = rows.slice().sort((a,b) => (b.leanProb ?? -1) - (a.leanProb ?? -1));
   const rankOf = new Map(ranked.map((r,i) => [r.id, i+1]));
 
-  let html = "<table><tr>" + (showActions ? "<th><input type='checkbox' id='selectAllHeader'></th>" : "") +
+  let html = "<table><tr>" +
     "<th>#</th><th>Team</th><th>Player</th><th>Prop</th><th>Line</th><th>Proj</th>" +
-    "<th>SD</th><th>Dist</th><th>P(play)</th><th>P(Lean)</th><th>Push</th><th>Lean</th>" +
-    "<th>Confidence</th>" + (showActions ? "<th></th>" : "") + "</tr>";
-  for (const r of rows) {
+    "<th>SD</th><th>Dist</th><th>P(play)</th><th>Model prob</th><th>Push</th><th>Model side</th>" +
+    "<th>Tier</th>" + (showActions ? "<th></th>" : "") + "</tr>";
+  for (const r of ranked) {
     const prob = r.leanProb !== null && r.leanProb !== undefined ? (r.leanProb * 100).toFixed(1) + "%" : "n/a";
     const push = r.pPush ? (r.pPush * 100).toFixed(1) + "%" : "";
     const pplay = r.playProbability !== undefined ? (r.playProbability * 100).toFixed(0) + "%" : "";
     const distLabel = { yardage: "norm", count: "negbin", td: "pois" }[r.kind] || "";
-    const logPayload = { week:r.week, player:r.player, team:r.team, propType:r.propType, lean:r.lean,
-      projection:r.finalProjection, openingLine:r.line, confidence:r.confidence, claimedProb:r.leanProb };
-    html += "<tr>" + (showActions ? "<td><input type='checkbox' class='rowSelect' data-rank='" + rankOf.get(r.id) +
-      "' data-payload='" + esc(JSON.stringify(logPayload)) + "'></td>" : "") +
+    html += "<tr>" +
       "<td>" + rankOf.get(r.id) + "</td><td>" + esc(r.team) + "</td><td>" + esc(r.player) + "</td><td>" + esc(r.propType) +
       "</td><td>" + esc(r.line) + "</td><td>" + esc(r.finalProjection ?? "") +
       "</td><td title='" + esc(r.varianceSource || "") + "'>" + esc(r.sd ?? "") +
@@ -802,11 +1011,10 @@ function renderScoredTable(rows, showActions) {
       "</td><td>" + esc(prob) + "</td><td>" + esc(push) +
       "</td><td class='" + (r.lean==="OVER"?"over":"under") + "'>" + esc(r.lean) +
       "</td><td><span class='pill " + esc(r.confidence) + "'>" + esc(r.confidence) + "</span></td>";
-    if (showActions) html += "<td class='row-actions'><button data-id='" + esc(r.id) + "' class='delBtn'>Delete</button>" +
-      " <button data-row='" + esc(JSON.stringify(logPayload)) + "' class='logBtn'>Log</button></td>";
+    if (showActions) html += "<td class='row-actions'><button data-id='" + esc(r.id) + "' class='delBtn'>Delete</button></td>";
     html += "</tr>";
   }
-  // Same-game picks are not independent. Surfacing this matters for two
+  // Same-game props are not independent. Surfacing this matters for two
   // reasons: correlated misses cluster and make calibration look worse than
   // the model deserves, and parlay math across same-game legs is badly wrong
   // under an independence assumption.
@@ -814,13 +1022,13 @@ function renderScoredTable(rows, showActions) {
   for (const r of rows) if (r.gameKey) (grouped[r.gameKey] = grouped[r.gameKey] || []).push(r);
   const multi = Object.entries(grouped).filter(([,v]) => v.length > 1);
   if (multi.length) {
-    html += "</table><div style='margin-top:10px;padding:10px;background:#FFF8E1;border:1px solid #E6C34A;border-radius:6px;font-size:12.5px'>";
+    html += "</table><div style='margin:12px;padding:12px;background:var(--amber-soft);border:1px solid var(--amber);border-radius:10px;font-size:12.5px'>";
     html += "<b>Correlated exposure</b><br>";
     for (const [k, v] of multi) {
       const dirs = v[0].correlatedWith ? v[0].correlatedWith.map(c=>c.direction) : [];
       const pos = dirs.filter(d=>d==="positive").length;
       const neg = dirs.filter(d=>d==="negative").length;
-      html += esc(k) + ": " + v.length + " picks (" + v.map(x=>esc(x.player)).join(", ") + ")";
+      html += esc(k) + ": " + v.length + " props (" + v.map(x=>esc(x.player)).join(", ") + ")";
       if (pos||neg) html += " &mdash; " + pos + " positively, " + neg + " negatively correlated with the first";
       html += "<br>";
     }
@@ -830,7 +1038,7 @@ function renderScoredTable(rows, showActions) {
   } else {
     html += "</table><p class='hint'>Dist: norm = normal (yardage)";
   }
-  return html + ", negbin = negative binomial (counts), pois = Poisson (touchdowns). Hover SD to see how it was derived. The Log button copies a pick into the Validation Tracker with its claimed probability, which is what makes calibration measurable later.</p>";
+  return html + ", negbin = negative binomial (counts), pois = Poisson (touchdowns). Hover SD to see how it was derived.</p>";
 }
 
 function attachDeleteHandlers() {
@@ -840,262 +1048,120 @@ function attachDeleteHandlers() {
       loadScored();
     });
   });
-  // Copies a scored pick into the tracker, carrying the claimed probability
-  // across automatically. Typing that by hand is the step people skip, and
-  // without it calibration can never be computed.
-  document.querySelectorAll(".logBtn").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      let payload;
-      try { payload = JSON.parse(btn.dataset.row); } catch { return; }
-      await fetch(API + "/api/tracker", {
-        method: "POST", headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify(payload)
-      });
-      btn.textContent = "Logged";
-      btn.disabled = true;
-    });
-  });
-
-  // Bulk selection helpers, wired here so they re-attach every time the
-  // table re-renders (fresh checkboxes each load).
-  document.getElementById("selectAllHeader")?.addEventListener("change", (e) => {
-    document.querySelectorAll(".rowSelect").forEach(cb => cb.checked = e.target.checked);
-  });
 }
 
-document.getElementById("saveTracker").addEventListener("click", async () => {
-  const data = formToObj(document.getElementById("trackerForm"));
-  await fetch(API + "/api/tracker", {
-    method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(data)
-  });
-  loadTracker();
+// Data menu: refresh the published stat feeds, download a backup.
+const dataMenu = document.getElementById("dataMenu");
+document.getElementById("dataMenuBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const open = dataMenu.classList.toggle("open");
+  document.getElementById("dataMenuBtn").setAttribute("aria-expanded", open ? "true" : "false");
 });
-
-// Auto-grading. Preview is a dry run that changes nothing; Apply writes the
-// matched values. Unmatched picks are always listed rather than resolved, since
-// a wrong result silently corrupts the calibration numbers.
-async function runAutograde(apply) {
-  const out = document.getElementById("autogradeOut");
-  out.innerHTML = "<span class='hint'>Working...</span>";
-  const res = await fetch(API + "/api/autograde", {
-    method: apply ? "POST" : "GET", headers: authHeaders()
-  });
-  const d = await res.json();
-  if (!res.ok) {
-    out.innerHTML = "<span style='color:var(--red)'>" + esc(d.error || "failed") + "</span>" +
-      (d.hint ? "<br><span class='hint'>" + esc(d.hint) + "</span>" : "");
-    return;
-  }
-  let html = "<b>" + (d.mode === "applied" ? "Applied" : "Preview") + "</b> &mdash; " +
-    "matched " + d.appliedCount + ", needs review " + d.needsReviewCount +
-    ", skipped (already graded) " + d.skippedCount;
-  if (d.weeksAvailable && d.weeksAvailable.length) {
-    html += "<br><span class='hint'>Stats available for weeks: " + esc(d.weeksAvailable.join(", ")) +
-      (d.statsGeneratedAt ? " &middot; feed generated " + esc(String(d.statsGeneratedAt).slice(0,10)) : "") + "</span>";
-  }
-  if (d.applied.length) {
-    html += "<table style='margin-top:8px'><tr><th>Pick</th><th>Matched to</th><th>Stat</th><th>Value</th></tr>";
-    for (const a of d.applied) {
-      html += "<tr><td>" + esc(a.player) + "</td><td>" + esc(a.matchedName) +
-        "</td><td>" + esc(a.stat) + "</td><td>" + esc(a.value) + "</td></tr>";
-    }
-    html += "</table>";
-  }
-  if (d.needsReview.length) {
-    html += "<p style='margin:8px 0 4px'><b>Needs manual entry:</b></p><table><tr><th>Pick</th><th>Why</th></tr>";
-    for (const n of d.needsReview) {
-      html += "<tr><td>" + esc(n.player) + "</td><td>" + esc(n.reason) + "</td></tr>";
-    }
-    html += "</table>";
-  }
-  out.innerHTML = html;
-  if (apply) loadTracker();
-}
-
-// Everything lives in a single R2 bucket, so a local copy is the only real
-// backup. Fetched with auth then handed to the browser as a download.
+document.addEventListener("click", (e) => { if (!dataMenu.contains(e.target)) dataMenu.classList.remove("open"); });
 document.getElementById("exportData").addEventListener("click", async () => {
+  const out = document.getElementById("dataOut");
   const res = await fetch(API + "/api/export", { headers: authHeaders() });
-  if (!res.ok) { document.getElementById("autogradeOut").innerHTML =
-    "<span style='color:var(--red)'>Export failed</span>"; return; }
+  if (!res.ok) { out.innerHTML = "<span style='color:var(--red)'>Export failed</span>"; return; }
   const blob = await res.blob();
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "nfl-prop-backup-" + new Date().toISOString().slice(0,10) + ".json";
   a.click();
   URL.revokeObjectURL(a.href);
+  out.innerHTML = "<span class='hint'>Backup downloaded.</span>";
 });
-
-document.getElementById("autogradeDry").addEventListener("click", () => runAutograde(false));
-document.getElementById("autogradeApply").addEventListener("click", () => runAutograde(true));
 document.getElementById("refreshStats").addEventListener("click", async () => {
-  const out = document.getElementById("autogradeOut");
+  const out = document.getElementById("dataOut");
   out.innerHTML = "<span class='hint'>Refreshing feeds...</span>";
   const res = await fetch(API + "/api/refresh-stats", { method: "POST", headers: authHeaders() });
-  const d = await res.json();
-  out.innerHTML = "<b>Feed refresh</b><table style='margin-top:6px'><tr><th>Feed</th><th>Status</th><th>Detail</th></tr>" +
-    (d.results || []).map(r => "<tr><td>" + esc(r.feed) + "</td><td>" + (r.ok ? "ok" : "failed") +
-      "</td><td>" + esc(r.ok ? (r.records + " records") : r.reason) +
-      (!r.ok && r.urlSeen !== undefined ? "<br><span class='hint'>URL seen (" + esc(r.urlLength) + " chars): " + esc(r.urlSeen) + "</span>" : "") +
-      "</td></tr>").join("") +
-    "</table>";
+  const d = await res.json().catch(() => ({}));
+  out.innerHTML = "<table><tr><th>Feed</th><th>Status</th></tr>" +
+    (d.results || []).map(r => "<tr><td>" + esc(r.feed) + "</td><td>" + (r.ok ? "<span class='over'>ok</span> " + esc(r.records) + " records" :
+      "<span class='under'>failed</span> " + esc(r.reason)) + "</td></tr>").join("") + "</table>";
 });
 
-async function loadTracker() {
-  const res = await fetch(API + "/api/tracker", { headers: authHeaders() });
-  if (!res.ok) { document.getElementById("trackerTableWrap").innerHTML = "<p class='hint'>Could not load (check password).</p>"; return; }
-  const rows = await res.json();
-
-  // Grade every row with a result + CLV direction, same rules as before.
-  const graded = rows.map(r => {
-    let result = "", clv = "";
-    if (r.actual !== undefined && r.actual !== "") {
-      const gradeLine = r.closingLine || r.openingLine;
-      const actual = Number(r.actual), line = Number(gradeLine);
-      if (actual === line) result = "PUSH";
-      else if ((r.lean === "OVER" && actual > line) || (r.lean === "UNDER" && actual < line)) result = "HIT";
-      else result = "MISS";
-    }
-    if (r.openingLine && r.closingLine && r.openingLine != r.closingLine) {
-      const moved = Number(r.closingLine) - Number(r.openingLine);
-      const withMe = (r.lean === "OVER" && moved > 0) || (r.lean === "UNDER" && moved < 0);
-      clv = withMe ? "+CLV" : "-CLV";
-    }
-    return { ...r, result, clv };
-  });
-
-  // Table
-  let html = "<table><tr><th>Wk</th><th>Player</th><th>Prop</th><th>Lean</th><th>Conf.</th><th>Proj</th>" +
-    "<th>Open</th><th>Close</th><th>Actual</th><th>Result</th><th>CLV</th><th></th></tr>";
-  for (const r of graded) {
-    html += "<tr><td>" + esc(r.week) + "</td><td>" + esc(r.player) + "</td><td>" + esc(r.propType) +
-      "</td><td>" + esc(r.lean) + "</td><td>" + esc(r.confidence) + "</td><td>" + esc(r.projection) +
-      "</td><td>" + esc(r.openingLine) + "</td><td>" + esc(r.closingLine) + "</td><td>" + esc(r.actual) +
-      "</td><td>" + esc(r.result) + "</td><td>" + esc(r.clv) +
-      "</td><td><button data-id='" + esc(r.id) + "' class='delTrackBtn'>Delete</button></td></tr>";
-  }
-  html += "</table>";
-  document.getElementById("trackerTableWrap").innerHTML = html;
-
-  // Helper: hit rate (excludes pushes and ungraded rows) for an arbitrary filter
-  function hitRate(filterFn) {
-    const subset = graded.filter(r => filterFn(r) && (r.result === "HIT" || r.result === "MISS"));
-    const hits = subset.filter(r => r.result === "HIT").length;
-    const total = subset.length;
-    return { hits, total, pct: total ? (hits/total*100) : null };
-  }
-
-  const overall = hitRate(() => true);
-  const byTier = ["High","Medium","Low"].map(tier => ({ tier, ...hitRate(r => r.confidence === tier) }));
-  const byLean = ["OVER","UNDER"].map(lean => ({ lean, ...hitRate(r => r.lean === lean) }));
-
-  const clvGraded = graded.filter(r => r.clv);
-  const clvPos = clvGraded.filter(r => r.clv === "+CLV").length;
-  const clvRate = clvGraded.length ? (clvPos/clvGraded.length*100) : null;
-
-  function card(label, rate, count, cls) {
-    const pctStr = rate === null ? "n/a" : rate.toFixed(1) + "%";
-    return "<div class='stat-card " + (cls||"") + "'><div class='num'>" + pctStr + "</div>" +
-      "<div class='label'>" + label + (count !== undefined ? " (n=" + count + ")" : "") + "</div></div>";
-  }
-
-  let cardsHtml = card("Overall Hit Rate", overall.pct, overall.total, overall.pct !== null && overall.pct >= 55 ? "good" : "warn");
-  for (const t of byTier) {
-    if (t.total > 0) cardsHtml += card(t.tier + " Confidence", t.pct, t.total);
-  }
-  for (const l of byLean) {
-    if (l.total > 0) cardsHtml += card(l.lean + " Picks", l.pct, l.total);
-  }
-  cardsHtml += card("CLV Rate", clvRate, clvGraded.length);
-  document.getElementById("hitRateCards").innerHTML = cardsHtml;
-
-  document.getElementById("trackerSummary").innerHTML =
-    "Logged picks: " + rows.length + " total. A tier's hit rate only means something once it has a " +
-    "meaningful sample, treat anything under about 20 logged picks per tier as too small to draw " +
-    "conclusions from.";
-
-  loadCalibration();
+async function loadTrends() {
+  const wrap = document.getElementById("tgWrap");
+  const q = new URLSearchParams();
+  q.set("stat", document.getElementById("tgStat").value);
+  q.set("games", document.getElementById("tgGames").value);
+  const pos = document.getElementById("tgPos").value.trim();
+  if (pos) q.set("pos", pos);
+  const min = document.getElementById("tgMin").value; if (min) q.set("min", min);
+  const sort = document.getElementById("tgSort").value; if (sort) q.set("sort", sort);
+  if (document.getElementById("tgSortGrade").checked) q.set("sort", "grade");
+  q.set("limit", document.getElementById("tgLimit").value || 25);
+  if (document.getElementById("tgSlate").checked) q.set("slate", "1");
+  wrap.innerHTML = "<p class='hint'>Loading...</p>";
+  const res = await fetch(API + "/api/trends?" + q.toString(), { headers: authHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { wrap.innerHTML = "<p class='hint'>" + esc(data.error || "Could not load") + ". " + esc(data.hint || "") + "</p>"; return; }
+  wrap.innerHTML = renderTrendGrid(data);
 }
-
-// Calibration is the measure that actually validates the model. Hit rate tells
-// you whether you won; calibration tells you whether the numbers mean anything.
-// A model can win 58% of its picks while claiming 75%, which makes it useless
-// for sizing even though the record looks fine.
-async function loadCalibration() {
-  const el = document.getElementById("calibrationWrap");
-  if (!el) return;
-  const res = await fetch(API + "/api/calibration", { headers: authHeaders() });
-  if (!res.ok) { el.innerHTML = ""; return; }
-  const c = await res.json();
-  if (!c || !c.n) {
-    el.innerHTML = "<p class='hint'><b>Calibration:</b> no graded picks with a recorded " +
-      "probability yet. Use the Log button on the All Scored Props tab so the claimed " +
-      "probability is captured, then fill in the actual result after the game.</p>";
-    return;
-  }
-  let html = "<h3 style='margin-bottom:4px'>Calibration</h3>";
-  const verdict = c.brier < 0.20 ? "good" : c.brier < 0.25 ? "" : "warn";
-  html += "<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px'>";
-  html += "<div class='stat-card " + verdict + "'><div class='num'>" + c.brier.toFixed(3) +
-    "</div><div class='label'>Brier score (n=" + c.n + ")</div></div>";
-  html += "<div class='stat-card'><div class='num'>" + c.baseline.toFixed(2) +
-    "</div><div class='label'>Coin-flip baseline</div></div>";
-  html += "</div>";
-  html += "<table><tr><th>Claimed band</th><th>n</th><th>Avg claimed</th><th>Actual hit rate</th><th>Gap</th></tr>";
-  for (const b of c.buckets) {
-    const gapPct = (b.gap * 100).toFixed(1);
-    const cls = Math.abs(b.gap) <= 0.05 ? "" : (b.gap < 0 ? "under" : "over");
-    html += "<tr><td>" + esc(b.label) + "</td><td>" + b.n + "</td><td>" +
-      (b.claimed*100).toFixed(1) + "%</td><td>" + (b.actual*100).toFixed(1) +
-      "%</td><td class='" + cls + "'>" + (b.gap>=0?"+":"") + gapPct + "%</td></tr>";
-  }
-  html += "</table>";
-  // Realized money performance, separate from model accuracy. Only picks
-  // marked as actually played are included, which is what lets bet-selection
-  // judgment be told apart from model skill.
-  if (c.bets && c.bets.gradedCount > 0) {
-    const b = c.bets;
-    html += "<h3 style='margin:14px 0 4px'>Realized performance (played picks only)</h3>";
-    html += "<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px'>";
-    const roiCls = b.roi === null ? "" : (b.roi > 0 ? "good" : "warn");
-    html += "<div class='stat-card " + roiCls + "'><div class='num'>" +
-      (b.roi === null ? "n/a" : (b.roi*100).toFixed(1) + "%") +
-      "</div><div class='label'>ROI (n=" + b.gradedCount + ")</div></div>";
-    html += "<div class='stat-card'><div class='num'>" + (b.unitsProfit>=0?"+":"") + b.unitsProfit +
-      "</div><div class='label'>Units, on " + b.unitsStaked + " staked</div></div>";
-    html += "<div class='stat-card'><div class='num'>" +
-      (b.hitRate===null?"n/a":(b.hitRate*100).toFixed(1)+"%") +
-      "</div><div class='label'>Hit rate, played</div></div>";
-    if (b.avgBreakEvenRate !== null) {
-      html += "<div class='stat-card'><div class='num'>" + (b.avgBreakEvenRate*100).toFixed(1) +
-        "%</div><div class='label'>Break-even needed</div></div>";
-    }
-    html += "</div>";
-    if (b.avgBreakEvenRate !== null && b.hitRate !== null) {
-      const beat = b.hitRate - b.avgBreakEvenRate;
-      html += "<p class='hint'>Hit rate is " + (beat>=0?"above":"below") + " the break-even rate " +
-        "implied by the prices paid, by " + Math.abs(beat*100).toFixed(1) + " points. This, not " +
-        "hit rate on its own, is the test of whether the process makes money: 55% at -130 loses " +
-        "while 52% at +100 wins.</p>";
-    }
-    if (b.pricedCount < b.gradedCount) {
-      html += "<p class='hint'>" + (b.gradedCount - b.pricedCount) + " played pick(s) have no odds " +
-        "recorded and are excluded from ROI.</p>";
-    }
-  }
-  html += "<p class='hint'>Brier score: lower is better, and 0.25 is what you would score by " +
-    "always saying 50%. Anything above 0.25 means the probabilities are actively misleading. " +
-    "A negative gap means the model is overconfident in that band. Per published guidance on " +
-    "prop modeling, treat fewer than roughly 50 to 100 graded picks as too small to act on.</p>";
-  el.innerHTML = html;
-
-  document.querySelectorAll(".delTrackBtn").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      await fetch(API + "/api/tracker/" + encodeURIComponent(btn.dataset.id), { method: "DELETE", headers: authHeaders() });
-      loadTracker();
+function renderTrendGrid(g) {
+  if (!g.rows || !g.rows.length) return "<p class='hint'>No players meet the filters (try fewer games or min games).</p>";
+  const fmt = (v) => (Math.round(v * 10) / 10).toString();
+  let h = "<table class='tg'><tr><th>Player</th><th>Pos</th><th>Line</th><th title='" + esc(g.gradeNote || "") + "'>Tendency grade &#9432;</th>";
+  g.cutoffs.forEach(c => { h += "<th class='" + (c === g.sortBy ? "sorted" : "") + "'>" + esc(c) + "+</th>"; });
+  const showMin = g.rows.some(r => r.avgMinutes !== null && r.avgMinutes !== undefined);
+  h += "<th>Above line</th><th>Avg</th>" + (showMin ? "<th>Min</th>" : "") + "<th>Last " + esc(g.games) + " (newest first)</th></tr>";
+  g.rows.forEach(r => {
+    h += "<tr><td><b>" + esc(r.player) + "</b> <span class='hint'>" + esc(r.team || "") + "</span></td><td>" + esc(r.position || "") + "</td>";
+    h += "<td>" + (r.line === null ? "-" : esc(r.line)) + "</td>";
+    h += r.grade
+      ? "<td title='" + esc(r.grade.basis + " (" + r.grade.percentile + "th percentile of graded lines). " + (g.gradeNote || "")) + "'><span class='grade g-" + esc(r.grade.letter.charAt(0)) + "'>" + esc(r.grade.letter) + "</span> <span class='hint'>" + (r.grade.direction === "above" ? "&#8593; above" : "&#8595; below") + "</span></td>"
+      : "<td class='hint'>enter a line</td>";
+    g.cutoffs.forEach(c => {
+      const v = r.hits[c], b = r.bucket ? r.bucket[c] : null;
+      h += "<td class='cell c" + (b === null || b === undefined ? 2 : b) + "'>" + Math.round(v * 100) + "%<div class='bar'><i style='width:" + Math.round(v * 100) + "%'></i></div></td>";
     });
+    h += "<td>" + (r.overLineRate === null ? "-" : Math.round(r.overLineRate * 100) + "%") + "</td>";
+    h += "<td>" + fmt(r.avg) + "</td>" + (showMin ? "<td>" + (r.avgMinutes === null ? "-" : fmt(r.avgMinutes)) + "</td>" : "") +
+      "<td class='vals' title='" + esc((r.weeks || []).join(", ")) + "'>" + r.values.map(fmt).map(esc).join(", ") + "</td></tr>";
   });
+  h += "</table><p class='hint'>" + esc(g.note) + " Data: " + esc(g.source) + (g.generatedAt ? ", generated " + esc(String(g.generatedAt).slice(0, 16).replace("T", " ")) + " UTC" : "") +
+    (g.latestGameDate ? ". Latest game " + esc(g.latestGameDate) : "") +
+    ". Lines come from " + (g.sport === "nba" ? "your NBA lines" : "props you have entered") + ". Sorted by " + esc(g.sortBy) + "+." +
+    (g.windowSeasonFallback ? " No games yet this season, so the window uses last season." : "") +
+    " <b>Tendency grades</b> describe how one-sided each player's record against the entered line has been, ranked within this market. They are not predictions or picks; in testing, recent records against the line did not predict the next result.</p>";
+  return h;
 }
+document.getElementById("tgRefresh").addEventListener("click", loadTrends);
+
+async function loadNbaTrends() {
+  const wrap = document.getElementById("nbWrap");
+  const q = new URLSearchParams();
+  q.set("sport", "nba");
+  q.set("stat", document.getElementById("nbStat").value);
+  q.set("games", document.getElementById("nbGames").value);
+  const pos = document.getElementById("nbPos").value.trim(); if (pos) q.set("pos", pos);
+  const min = document.getElementById("nbMin").value; if (min) q.set("min", min);
+  const sort = document.getElementById("nbSort").value; if (sort) q.set("sort", sort);
+  if (document.getElementById("nbSortGrade").checked) q.set("sort", "grade");
+  q.set("limit", document.getElementById("nbLimit").value || 25);
+  if (document.getElementById("nbSlate").checked) q.set("slate", "1");
+  wrap.innerHTML = "<p class='hint'>Loading...</p>";
+  const res = await fetch(API + "/api/trends?" + q.toString(), { headers: authHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { wrap.innerHTML = "<p class='hint'>" + esc(data.error || "Could not load") + ". " + esc(data.hint || "") + "</p>"; return; }
+  wrap.innerHTML = renderTrendGrid(data);
+}
+async function loadNbaLines() {
+  const res = await fetch(API + "/api/nba-lines", { headers: authHeaders() });
+  if (!res.ok) return;
+  const list = await res.json().catch(() => []);
+  document.getElementById("nbLines").value = list.map(l => l.player + ", " + l.stat + ", " + l.line).join("\\n");
+}
+document.getElementById("nbRefresh").addEventListener("click", loadNbaTrends);
+document.getElementById("nbSaveLines").addEventListener("click", async () => {
+  const res = await fetch(API + "/api/nba-lines", { method: "POST", headers: authHeaders({ "content-type": "application/json" }),
+    body: JSON.stringify({ text: document.getElementById("nbLines").value }) });
+  const out = await res.json().catch(() => ({}));
+  document.getElementById("nbLinesOut").textContent = res.ok
+    ? "Saved " + out.saved + (out.rejected && out.rejected.length ? "; skipped " + out.rejected.length + ": " + out.rejected.map(r => r.line + " (" + r.reason + ")").join("; ") : "")
+    : (out.error || "Save failed");
+  if (res.ok) loadNbaTrends();
+});
 
 </script>
 </body>

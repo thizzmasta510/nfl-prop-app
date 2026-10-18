@@ -25,3 +25,11 @@ nfl-prop-backup-*.json
 # NOTE: weekly-stats.json, player-stats.json, and route-stats.json are
 # intentionally NOT ignored.
 # The GitHub Action commits them, and the Worker fetches them by raw URL.
+
+# Odds backfills from SportsGameOdds are licensed data; keep them out of a public repo.
+sgo_backfill*.json
+sgo_*raw*.json
+# Keys and certificates
+*.pem
+*.key
+backtest/market_vs_model_rows.json
