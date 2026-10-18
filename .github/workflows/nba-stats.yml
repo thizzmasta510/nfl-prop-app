@@ -22,12 +22,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install nba_api pandas
+          pip install requests nba_api pandas
 
-      # Exits non-zero (and writes nothing) if stats.nba.com can't be reached,
-      # so a failed run never replaces good data with an empty file.
+      # Tries cdn.nba.com first (box scores), then stats.nba.com. Exits non-zero
+      # (and writes nothing) if both fail, so a failed run never replaces good data.
       - name: Compute NBA game logs
         run: cd github-action && python compute_nba_logs.py && mv nba-trend-logs.json ../
+        timeout-minutes: 30
 
       - name: Commit and push results
         run: |
