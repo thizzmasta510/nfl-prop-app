@@ -102,6 +102,7 @@ export function teamContext(doc, asOf) {
   for (const r of rows) {
     const grp = posGroup(r.position), opp = r.opponent;
     if (!grp || !opp || !r.stats) continue;
+    if (r.starter === false) continue;   // ESPN data lists every player's position; DvP counts starters only
     const which = Number(r.season) === curSeason ? "cur" : Number(r.season) === curSeason - 1 ? "prev" : null;
     if (!which) continue;
     const cell = ((dv[opp] ||= {})[grp] ||= { cur: { n: 0 }, prev: { n: 0 } })[which];

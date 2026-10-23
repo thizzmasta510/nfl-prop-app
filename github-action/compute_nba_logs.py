@@ -9,6 +9,8 @@ across the current and previous season, for the NBA Tendency Matrix tab, plus
              have already started
 
 Sources, tried in order:
+  0. (see below) cdn.nba.com first; if it refuses (it returns 403 to GitHub's
+     servers), ESPN's public scoreboard + game summary JSON, then stats.nba.com.
   1. cdn.nba.com (the NBA's public CDN: the season schedule plus one box score per
      game). This is what the NBA's own site loads, and unlike stats.nba.com it is
      not known to block cloud servers such as GitHub's runners.
@@ -26,7 +28,7 @@ import math
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from compute_player_stats import normalize_name, short_key
 
@@ -271,6 +273,187 @@ def from_cdn(session=None, sleep=0.3, now=None):
 
 
 # ---------------------------------------------------------------------------
+# Source 1b: ESPN public JSON (scoreboard by date + one summary per game)
+# ---------------------------------------------------------------------------
+ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
+ESPN_HEADERS = {"User-Agent": CDN_HEADERS["User-Agent"], "Accept": "application/json"}
+# ESPN abbreviations that differ from the NBA's (the injury report and Kalshi use NBA codes).
+ESPN_TEAM = {"GS": "GSW", "NO": "NOP", "NY": "NYK", "SA": "SAS", "UTAH": "UTA", "WSH": "WAS", "PHO": "PHX", "BRK": "BKN"}
+ESPN_POS = {"PG": "G", "SG": "G", "G": "G", "SF": "F", "PF": "F", "F": "F", "C": "C", "GF": "G", "FC": "F"}
+
+
+def espn_team(abbr):
+    a = str(abbr or "").upper()
+    return ESPN_TEAM.get(a, a)
+
+
+def _et_date(iso):
+    from zoneinfo import ZoneInfo
+    try:
+        t = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except ValueError:
+        return None, None
+    return t, t.astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+
+
+def _made_att(v):
+    try:
+        m, a = str(v).split("-")
+        return float(m), float(a)
+    except (ValueError, AttributeError):
+        return None, None
+
+
+def espn_box(summary, event, season_start):
+    """ESPN game summary -> (player rows, team-game rows) in the same shape as the cdn path."""
+    _, date = _et_date(event.get("date"))
+    gid = str(event.get("id"))
+    out, totals = [], {}
+    teams = (summary or {}).get("boxscore", {}).get("players") or []
+    if len(teams) != 2:
+        return [], []
+    codes = [espn_team((t.get("team") or {}).get("abbreviation")) for t in teams]
+    home_code = None
+    for c in ((event.get("competitions") or [{}])[0].get("competitors") or []):
+        if c.get("homeAway") == "home":
+            home_code = espn_team((c.get("team") or {}).get("abbreviation"))
+    for ti, team in enumerate(teams):
+        me, opp = codes[ti], codes[1 - ti]
+        st = (team.get("statistics") or [{}])[0]
+        keys = st.get("keys") or []
+        idx = {k: i for i, k in enumerate(keys)}
+        tot = {"pts": 0.0, "fga": 0.0, "fta": 0.0, "orb": 0.0, "tov": 0.0, "min": 0.0}
+        for a in st.get("athletes") or []:
+            vals = a.get("stats") or []
+            if a.get("didNotPlay") or not vals:
+                continue
+            g = lambda k: vals[idx[k]] if k in idx and idx[k] < len(vals) else None
+            mins = num(g("minutes"))
+            if not mins:
+                continue
+            pts, reb, ast = num(g("points")), num(g("rebounds")), num(g("assists"))
+            stl, blk, tov = num(g("steals")), num(g("blocks")), num(g("turnovers"))
+            fgm, fga = _made_att(g("fieldGoalsMade-fieldGoalsAttempted"))
+            tpm, _ = _made_att(g("threePointFieldGoalsMade-threePointFieldGoalsAttempted"))
+            _, fta = _made_att(g("freeThrowsMade-freeThrowsAttempted"))
+            orb = num(g("offensiveRebounds"))
+            for k, v in (("pts", pts), ("fga", fga), ("fta", fta), ("orb", orb), ("tov", tov), ("min", mins)):
+                if v is not None:
+                    tot[k] += v
+            stats = {"points": pts, "rebounds": reb, "assists": ast, "threes": tpm, "steals": stl, "blocks": blk,
+                     "turnovers": tov, "minutes": mins}
+            if None not in (pts, reb, ast):
+                stats.update(pra=pts + reb + ast, pr=pts + reb, pa=pts + ast, ra=reb + ast)
+            if None not in (stl, blk):
+                stats["stocks"] = stl + blk
+            stats = {k: v for k, v in stats.items() if v is not None}
+            ath = a.get("athlete") or {}
+            name = str(ath.get("displayName") or "").strip()
+            pos = ESPN_POS.get(str((ath.get("position") or {}).get("abbreviation") or "").upper().replace("-", ""))
+            out.append({
+                "name": name, "norm": normalize_name(name), "short": short_key(name),
+                "team": me, "season": season_start, "date": date, "seasonType": "Regular Season",
+                "position": pos, "starter": bool(a.get("starter")),
+                "opponent": opp, "home": me == home_code,
+                "gameId": gid, "playerId": int(ath.get("id") or 0), "stats": stats,
+            })
+        totals[me] = tot
+    tg = []
+    if all(k in totals for k in codes):
+        poss = lambda x: x["fga"] - x["orb"] + x["tov"] + 0.44 * x["fta"]
+        p = round((poss(totals[codes[0]]) + poss(totals[codes[1]])) / 2, 1)
+        for ti in (0, 1):
+            me, opp = codes[ti], codes[1 - ti]
+            team_min = totals[me]["min"]
+            mins = 240.0 + 25.0 * max(0, round((team_min - 240) / 25))   # overtime adds 25 team minutes
+            tg.append({"g": gid, "d": date, "s": season_start, "t": me, "o": opp, "home": me == home_code,
+                       "pts": totals[me]["pts"], "opp": totals[opp]["pts"], "poss": p, "min": mins})
+    return out, tg
+
+
+def from_espn(session=None, sleep=0.15, now=None):
+    import requests
+    from zoneinfo import ZoneInfo
+    s = session or requests.Session()
+    get = lambda path, **params: s.get(f"{ESPN}/{path}", params=params, headers=ESPN_HEADERS, timeout=30)
+    now = now or datetime.now(timezone.utc)
+    today = now.astimezone(ZoneInfo("America/New_York")).date()
+    cur_start = season_strings(now)[0][0]
+    rows, tgames, upcoming = [], [], []
+    fails = 0
+
+    def scoreboard(day):
+        nonlocal fails
+        try:
+            r = get("scoreboard", dates=day.strftime("%Y%m%d"))
+            r.raise_for_status()
+            fails = 0
+            return r.json().get("events") or []
+        except Exception as e:
+            fails += 1
+            print(f"  espn scoreboard {day}: {type(e).__name__}: {e}")
+            return []
+
+    # Upcoming: today and the next 7 days, games not yet started.
+    for k in range(0, 8):
+        for ev in scoreboard(today + timedelta(days=k)):
+            st = (ev.get("status") or {}).get("type") or {}
+            if (ev.get("season") or {}).get("type") != 2 or st.get("state") != "pre":
+                continue
+            t, d = _et_date(ev.get("date"))
+            comp = (ev.get("competitions") or [{}])[0].get("competitors") or []
+            side = {c.get("homeAway"): espn_team((c.get("team") or {}).get("abbreviation")) for c in comp}
+            if t and side.get("home") and side.get("away") and t > now:
+                upcoming.append({"g": str(ev.get("id")), "tip": t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                 "date": d, "home": side["home"], "away": side["away"]})
+        if fails >= 5:
+            print("  espn unreachable; giving up")
+            return [], [], []
+    upcoming.sort(key=lambda x: x["tip"])
+
+    def walk(start_day, stop_day, season_start, label):
+        per_team, got = {}, 0
+        day = start_day
+        nonlocal fails
+        while day >= stop_day:
+            if not FULL and len(per_team) >= 30 and min(per_team.values()) >= KEEP_GAMES + 2:
+                break
+            for ev in scoreboard(day):
+                st = (ev.get("status") or {}).get("type") or {}
+                if (ev.get("season") or {}).get("type") != 2 or not st.get("completed"):
+                    continue
+                try:
+                    r = get("summary", event=str(ev.get("id")))
+                    r.raise_for_status()
+                    br, tg = espn_box(r.json(), ev, season_start)
+                except Exception as e:
+                    print(f"  espn summary {ev.get('id')}: {type(e).__name__}: {e}")
+                    continue
+                if br:
+                    got += 1
+                    for t in {x["team"] for x in br}:
+                        per_team[t] = per_team.get(t, 0) + 1
+                    rows.extend(br)
+                    tgames.extend(tg)
+                time.sleep(sleep)
+            if fails >= 5:
+                print("  espn unreachable; giving up")
+                break
+            day -= timedelta(days=1)
+        print(f"espn {label}: {got} games")
+        return per_team
+
+    from datetime import date as _date
+    # Current season: yesterday back to Oct 1; previous season: Apr 20 back to Oct 1.
+    cur = walk(today - timedelta(days=0 if now.hour >= 12 else 1), _date(cur_start, 10, 1), cur_start,
+               f"{cur_start}-{str(cur_start + 1)[-2:]}")
+    if FULL or not (len(cur) >= 30 and min(cur.values()) >= KEEP_GAMES):
+        prev = cur_start - 1
+        walk(_date(cur_start, 4, 20), _date(prev, 10, 1), prev, f"{prev}-{str(prev + 1)[-2:]}")
+    return rows, tgames, upcoming
+
+
+# ---------------------------------------------------------------------------
 # Source 2: stats.nba.com (nba_api)
 # ---------------------------------------------------------------------------
 def from_stats_api():
@@ -327,7 +510,13 @@ def main():
     except Exception as e:
         print(f"cdn source failed: {type(e).__name__}: {e}")
     if not rows:
-        print("cdn.nba.com gave no data; trying stats.nba.com")
+        print("cdn.nba.com gave no data; trying ESPN")
+        try:
+            rows, tgames, upcoming = from_espn()
+        except Exception as e:
+            print(f"ESPN source failed: {type(e).__name__}: {e}")
+    if not rows:
+        print("ESPN gave no data; trying stats.nba.com")
         try:
             rows = from_stats_api()
         except Exception as e:
