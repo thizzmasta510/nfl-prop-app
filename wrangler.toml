@@ -2,23 +2,36 @@ name = "nfl-prop-model"
 main = "src/index.js"
 compatibility_date = "2024-09-01"
 
-# R2 bucket used as the app's database.
+# Free-tier R2 bucket used as the app's entire "database".
+# Create it with: wrangler r2 bucket create nfl-prop-data
 [[r2_buckets]]
 binding = "PROP_DATA"
 bucket_name = "nfl-prop-data"
 
-# Tue 10:00 UTC and Fri 18:00 UTC: refresh all feeds. Daily 14:30 UTC: NBA only.
+# Scheduled refresh: Tuesday 10:00 UTC (after Monday night games are recorded)
+# and Friday 18:00 UTC (after final injury reports). Both run an hour after the
+# GitHub Action publishes, so the files are ready. Cron Triggers are free on
+# Cloudflare's Workers plan, up to 3 per account.
 [triggers]
-crons = ["0 10 * * 2", "0 18 * * 5", "30 14 * * *"]
+crons = ["0 10 * * 2", "0 18 * * 5"]
 
+# These are public raw GitHub URLs, so they are plain vars rather than secrets.
+# Nothing here is sensitive: anyone can read these files from the repo anyway.
 [vars]
 PLAYER_STATS_URL = "https://raw.githubusercontent.com/thizzmasta510/nfl-prop-app/main/player-stats.json"
 STATS_FEED_URL = "https://raw.githubusercontent.com/thizzmasta510/nfl-prop-app/main/weekly-stats.json"
 TREND_LOGS_URL = "https://raw.githubusercontent.com/thizzmasta510/nfl-prop-app/main/trend-logs.json"
 NBA_TREND_LOGS_URL = "https://raw.githubusercontent.com/thizzmasta510/nfl-prop-app/main/nba-trend-logs.json"
 
-# Cloudflare Access login
+# Cloudflare Access (recommended, see SECURITY.md). Not secret, so they can live here
+# once you have them. Leave them commented out until Access is set up, or every
+# request will be refused.
 ACCESS_TEAM_DOMAIN = "red-bonus-8506.cloudflareaccess.com"
 ACCESS_AUD = "a744cc3ed6552953bd24edb1f8f2ce02aad7b5d9058efc273798c91b58ec8b5c"
 
-# Secrets (APP_SECRET) are set with: npx wrangler secret put APP_SECRET
+# Genuine secrets stay out of this file entirely. Set with `wrangler secret put`:
+#   APP_SECRET      required unless Cloudflare Access is on; the API refuses to run
+#                   (fail closed) when neither is configured
+#   ALLOWED_ORIGIN  optional, restricts which origin may call the API;
+#                   defaults to the Worker's own origin when unset
+# Local development only: put ALLOW_OPEN=true in .dev.vars to run without a password.
