@@ -1,6 +1,12 @@
 """
 Publishes nba-trend-logs.json: each NBA player's last 20 regular-season games
-across the current and previous season, for the NBA Tendency Matrix tab.
+across the current and previous season, for the NBA Tendency Matrix tab, plus
+  teamGames: one row per team per game (points, opponent points, possessions,
+             minutes), so the Worker can compute pace and offensive/defensive
+             rating as of any date (no lookahead in backtests)
+  upcoming:  scheduled games for the next 8 days with tip-off times, so the
+             Worker can show each player's next opponent and skip games that
+             have already started
 
 Sources, tried in order:
   1. cdn.nba.com (the NBA's public CDN: the season schedule plus one box score per
@@ -25,6 +31,10 @@ from datetime import datetime, timezone
 from compute_player_stats import normalize_name, short_key
 
 KEEP_GAMES = 20
+# --all: every regular-season game of both seasons (no 20-game trim, no early stop),
+# for point-in-time backtests. Written to --out (default nba-history.json); not
+# meant to be published for the Worker.
+FULL = "--all" in sys.argv
 TIMEOUT = 60
 
 
@@ -125,11 +135,80 @@ def box_rows(box, season_start):
     return out
 
 
-def from_cdn(session=None, sleep=0.3):
+def _team_line(team):
+    """Points, FGA, FTA, offensive rebounds, turnovers and minutes for one side of a box score.
+    Uses the team totals when present, otherwise sums the players."""
+    st = team.get("statistics") or {}
+    players = team.get("players") or []
+    def total(*keys):
+        for k in keys:
+            v = num(st.get(k))
+            if v is not None:
+                return v
+        vals = [num((p.get("statistics") or {}).get(keys[-1])) for p in players]
+        vals = [v for v in vals if v is not None]
+        return sum(vals) if vals else None
+    return {
+        "pts": total("points"), "fga": total("fieldGoalsAttempted"), "fta": total("freeThrowsAttempted"),
+        "orb": total("reboundsOffensive"), "tov": total("turnoversTotal", "turnovers"),
+    }
+
+
+def team_games(box, season_start):
+    """One CDN box score -> two team-game rows with an estimated possession count.
+    Possessions use the standard estimate FGA - ORB + TOV + 0.44 * FTA, averaged over
+    both teams (they have nearly the same number of possessions in a game)."""
+    g = (box or {}).get("game") or {}
+    gid = str(g.get("gameId") or "")
+    if not gid.startswith("002") or int(g.get("gameStatus") or 0) != 3:
+        return []
+    date = str(g.get("gameEt") or g.get("gameTimeUTC") or "")[:10]
+    home, away = g.get("homeTeam") or {}, g.get("awayTeam") or {}
+    h, a = _team_line(home), _team_line(away)
+    if None in (h["pts"], h["fga"], h["fta"], h["orb"], h["tov"], a["pts"], a["fga"], a["fta"], a["orb"], a["tov"]):
+        return []
+    poss = lambda x: x["fga"] - x["orb"] + x["tov"] + 0.44 * x["fta"]
+    p = round((poss(h) + poss(a)) / 2, 1)
+    # Overtime: team minutes are 240 plus 25 per OT period (5 players x 5 minutes).
+    periods = max(4, int(num(g.get("period")) or 4))
+    mins = 240.0 + 25.0 * (periods - 4)
+    out = []
+    for me, them, x, y in ((home, away, h, a), (away, home, a, h)):
+        out.append({"g": gid, "d": date, "s": season_start,
+                    "t": str(me.get("teamTricode") or "").upper(), "o": str(them.get("teamTricode") or "").upper(),
+                    "home": me is home, "pts": x["pts"], "opp": y["pts"], "poss": p, "min": mins})
+    return out
+
+
+def upcoming_games(sched, now=None, days=8):
+    """Scheduled (not started) regular-season games in the next `days` days."""
+    now = now or datetime.now(timezone.utc)
+    out = []
+    for d in (sched or {}).get("gameDates") or []:
+        for gm in d.get("games") or []:
+            gid = str(gm.get("gameId") or "")
+            if not gid.startswith("002") or int(gm.get("gameStatus") or 0) != 1:
+                continue
+            tip = str(gm.get("gameDateTimeUTC") or "")
+            try:
+                t = datetime.fromisoformat(tip.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if t < now or (t - now).days > days:
+                continue
+            out.append({"g": gid, "tip": t.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "date": str(gm.get("gameDateEst") or tip)[:10],
+                        "home": str((gm.get("homeTeam") or {}).get("teamTricode") or "").upper(),
+                        "away": str((gm.get("awayTeam") or {}).get("teamTricode") or "").upper()})
+    out.sort(key=lambda x: x["tip"])
+    return out
+
+
+def from_cdn(session=None, sleep=0.3, now=None):
     import requests
     s = session or requests.Session()
     get = lambda url: s.get(url, headers=CDN_HEADERS, timeout=30)
-    rows = []
+    rows, tgames, upcoming = [], [], []
     cur_start = season_strings()[0][0]
     # Current season: completed regular-season games from the schedule, newest first.
     ids = []
@@ -137,6 +216,7 @@ def from_cdn(session=None, sleep=0.3):
         r = get(f"{CDN}/staticData/scheduleLeagueV2.json")
         r.raise_for_status()
         sched = r.json().get("leagueSchedule") or {}
+        upcoming = upcoming_games(sched, now)
         for d in sched.get("gameDates") or []:
             for gm in d.get("games") or []:
                 gid = str(gm.get("gameId") or "")
@@ -152,15 +232,17 @@ def from_cdn(session=None, sleep=0.3):
 
     def collect(id_list, season_start, label):
         per_team, got, fails = {}, 0, 0
-        for gid in id_list[:MAX_BOX_PER_SEASON]:
-            if per_team and len(per_team) >= 30 and min(per_team.values()) >= KEEP_GAMES + 2:
+        for gid in (id_list if FULL else id_list[:MAX_BOX_PER_SEASON]):
+            if not FULL and per_team and len(per_team) >= 30 and min(per_team.values()) >= KEEP_GAMES + 2:
                 break
             try:
                 r = get(f"{CDN}/liveData/boxscore/boxscore_{gid}.json")
                 if r.status_code == 404:
                     continue
                 r.raise_for_status()
-                br = box_rows(r.json(), season_start)
+                box = r.json()
+                br = box_rows(box, season_start)
+                tg = team_games(box, season_start)
             except Exception as e:
                 fails += 1
                 print(f"  cdn box {gid}: {type(e).__name__}: {e}")
@@ -173,18 +255,19 @@ def from_cdn(session=None, sleep=0.3):
                 for t in {x["team"] for x in br}:
                     per_team[t] = per_team.get(t, 0) + 1
                 rows.extend(br)
+                tgames.extend(tg)
             time.sleep(sleep)
         print(f"cdn {label}: {got} box scores")
         return per_team
 
     cur_teams = collect([g for _, g in ids], cur_start, f"{cur_start}-{str(cur_start + 1)[-2:]}")
-    if len(cur_teams) >= 30 and min(cur_teams.values()) >= KEEP_GAMES:
-        return rows  # every team already has a full window this season
+    if not FULL and len(cur_teams) >= 30 and min(cur_teams.values()) >= KEEP_GAMES:
+        return rows, tgames, upcoming  # every team already has a full window this season
     # Previous season, newest game first (regular-season ids are 002YY00001..002YY01230).
     prev = cur_start - 1
     prev_ids = [f"002{str(prev)[-2:]}{n:05d}" for n in range(1230, 0, -1)]
     collect(prev_ids, prev, f"{prev}-{str(prev + 1)[-2:]}")
-    return rows
+    return rows, tgames, upcoming
 
 
 # ---------------------------------------------------------------------------
@@ -238,9 +321,9 @@ def from_stats_api():
 
 
 def main():
-    rows = []
+    rows, tgames, upcoming = [], [], []
     try:
-        rows = from_cdn()
+        rows, tgames, upcoming = from_cdn()
     except Exception as e:
         print(f"cdn source failed: {type(e).__name__}: {e}")
     if not rows:
@@ -257,21 +340,28 @@ def main():
     kept, count = [], {}
     for r in rows:
         n = count.get(r["playerId"], 0)
-        if n < KEEP_GAMES:
+        if FULL or n < KEEP_GAMES:
             kept.append(r)
             count[r["playerId"]] = n + 1
+    out_path = "nba-trend-logs.json"
+    if FULL:
+        out_path = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else "nba-history.json"
 
     payload = {
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "sport": "nba",
         "season": season_strings()[0][0],
-        "gamesPerPlayer": KEEP_GAMES,
+        "gamesPerPlayer": None if FULL else KEEP_GAMES,
         "latestGameDate": rows[0]["date"],
         "players": kept,
+        # Empty when the stats.nba.com fallback was used (it has no possession data).
+        "teamGames": sorted(tgames, key=lambda x: (x["d"], x["g"], x["t"])),
+        "upcoming": upcoming,
     }
-    with open("nba-trend-logs.json", "w") as f:
+    with open(out_path, "w") as f:
         json.dump(payload, f, separators=(",", ":"), allow_nan=False)
-    print(f"Wrote nba-trend-logs.json: {len(kept)} player-games, latest {rows[0]['date']}")
+    print(f"Wrote {out_path}: {len(kept)} player-games, {len(tgames)} team-games, "
+          f"{len(upcoming)} upcoming games, latest {rows[0]['date']}")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,9 @@ import { scoreProp, rankByTeam, calibration, matchPlayerStat,
          annotateCorrelation, betPerformance, breakEvenRate, propTypeToStatKey } from "./model.js";
 import { authorize, verifyAccessJwt, withSecurityHeaders, scriptHashFor, htmlCsp } from "./security.js";
 import { buildTrendGrid, linesFromProps, linesFromList, parseLinesText, MARKETS, SPORTS } from "./trends.js";
+import { teamContext, decorateNbaGrid } from "./nba_model.js";
+import { KALSHI_NBA_SERIES, parseKalshiMarket, eventDate, buildNbaBoard } from "./nba_board.js";
+import { injuryIndex } from "./nba_injuries.js";
 
 const PROPS_KEY = "props.json";
 const TRACKER_KEY = "tracker.json";
@@ -10,7 +13,12 @@ const PLAYER_STATS_KEY = "player-stats.json";
 const TREND_LOGS_KEY = "trend-logs.json";
 const NBA_TREND_LOGS_KEY = "nba-trend-logs.json";
 const NBA_LINES_KEY = "nba-lines.json";
+const NBA_INJURIES_KEY = "nba-injuries.json";
+const INJURY_REFRESH_SECONDS = 1200; // re-pull the published injury file at most every 20 minutes
 const MAX_NBA_LINES = 300;
+const KALSHI_CACHE_SECONDS = 300;   // NBA Board: re-pull Kalshi prices at most every 5 minutes per market
+const KALSHI_BASES = ["https://api.elections.kalshi.com/trade-api/v2", "https://external-api.kalshi.com/trade-api/v2"];
+const NBA_DAILY_CRON = "30 14 * * *"; // 10:30 AM ET, after the NBA GitHub Action (14:10 UTC)
 const MAX_BODY_BYTES = 20_000; // generous for one form submission, blocks payload abuse
 const MAX_ARRAY_LEN = 2000; // hard ceiling on stored records, blocks storage-fill abuse
 const MAX_STRING_LEN = 200;
@@ -87,6 +95,109 @@ async function writeJson(bucket, key, data) {
   await bucket.put(key, JSON.stringify(data), {
     httpMetadata: { contentType: "application/json" },
   });
+}
+
+// Today's date in US Eastern time (NBA and Kalshi game days are Eastern dates).
+function easternDate(ms = Date.now()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+}
+
+// Published injury file. NBA_INJURIES_URL, or the same folder as NBA_TREND_LOGS_URL.
+function nbaInjuriesUrl(env) {
+  const explicit = String(env.NBA_INJURIES_URL || "").trim();
+  if (explicit) return explicit;
+  const logs = String(env.NBA_TREND_LOGS_URL || "").trim();
+  return logs ? logs.replace(/nba-trend-logs\.json$/, "nba-injuries.json") : "";
+}
+
+// The injury report changes through the day, so unlike the other feeds it is
+// re-pulled on demand when the stored copy is older than 20 minutes. A failed
+// pull keeps the stored copy. Returns an injuryIndex or null.
+async function nbaInjuries(env) {
+  let doc = await readJson(env.PROP_DATA, NBA_INJURIES_KEY, null);
+  const age = doc && doc._pulledAt ? (Date.now() - Date.parse(doc._pulledAt)) / 1000 : Infinity;
+  const url = nbaInjuriesUrl(env);
+  if (url && age > INJURY_REFRESH_SECONDS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (res.ok) {
+        const fresh = await res.json();
+        if (fresh && Array.isArray(fresh.players)) {
+          doc = { ...fresh, _pulledAt: new Date().toISOString() };
+          await writeJson(env.PROP_DATA, NBA_INJURIES_KEY, doc);
+        }
+      }
+    } catch { /* keep the stored copy */ } finally { clearTimeout(timer); }
+  }
+  return injuryIndex(doc);
+}
+
+// Team context is the same for every request until the data or the day changes.
+let NBA_CTX = { key: null, ctx: null };
+function nbaContextFor(doc) {
+  const key = `${doc.generatedAt || ""}|${easternDate()}`;
+  if (NBA_CTX.key !== key) NBA_CTX = { key, ctx: teamContext(doc, null) };
+  return NBA_CTX.ctx;
+}
+
+// Kalshi public market data (no account or key needed). The base URL is fixed in
+// code (or KALSHI_API_BASE in wrangler.toml), never taken from a request.
+async function kalshiGet(env, path) {
+  const bases = env.KALSHI_API_BASE ? [String(env.KALSHI_API_BASE).trim()] : KALSHI_BASES;
+  let last = "no Kalshi base URL";
+  for (const base of bases) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(base + path, { headers: { accept: "application/json" }, signal: controller.signal });
+      if (res.ok) return await res.json();
+      last = `HTTP ${res.status} from ${new URL(base).host}`;
+      if (res.status === 429) break; // rate limited: don't hammer the second host
+    } catch (err) {
+      last = `${err && err.name ? err.name : "Error"} from ${new URL(base).host}`;
+    } finally { clearTimeout(timer); }
+  }
+  throw new Error(last);
+}
+
+// Open Kalshi markets for one stat on one game day. Lists the series' open events
+// (one per game), keeps that day's games, then reads each game's markets. Done per
+// stat so one request stays small (Workers' CPU and subrequest limits). Cached in
+// R2 for 5 minutes; a forced refresh is still limited to once a minute.
+async function kalshiNbaMarkets(env, stat, date, force) {
+  const series = KALSHI_NBA_SERIES[stat];
+  const key = `kalshi-nba-${stat}.json`;
+  const cached = await readJson(env.PROP_DATA, key, null);
+  const age = cached ? (Date.now() - Date.parse(cached.fetchedAt)) / 1000 : Infinity;
+  const sameDay = cached && (!date || cached.date === date);
+  if (cached && sameDay && (age < KALSHI_CACHE_SECONDS && !force || age < 60)) return { ...cached, cached: true };
+
+  const events = [];
+  let cursor = "";
+  for (let page = 0; page < 3; page++) {
+    const q = new URLSearchParams({ series_ticker: series, status: "open", limit: "200" });
+    if (cursor) q.set("cursor", cursor);
+    const data = await kalshiGet(env, "/events?" + q.toString());
+    for (const e of data.events || []) if (e && e.event_ticker) events.push(e.event_ticker);
+    cursor = data.cursor || "";
+    if (!cursor) break;
+  }
+  const today = easternDate();
+  const dates = [...new Set(events.map(eventDate).filter((d) => d && d >= today))].sort();
+  const day = date || dates[0] || today;
+  const todays = events.filter((e) => eventDate(e) === day).slice(0, 16);
+  const markets = [];
+  for (let i = 0; i < todays.length; i += 4) {
+    const batch = await Promise.all(todays.slice(i, i + 4).map((ev) =>
+      kalshiGet(env, "/markets?" + new URLSearchParams({ event_ticker: ev, limit: "1000" }).toString())
+        .then((d) => d.markets || []).catch(() => [])));
+    for (const list of batch) for (const m of list) { const pm = parseKalshiMarket(m, stat); if (pm) markets.push(pm); }
+  }
+  const out = { fetchedAt: new Date().toISOString(), date: day, availableDates: dates.slice(0, 7), games: todays.length, stat, markets };
+  await writeJson(env.PROP_DATA, key, out);
+  return { ...out, cached: false };
 }
 
 function checkAuth(request, env) {
@@ -465,8 +576,39 @@ const app = {
         // slate=1 restricts rows to players you have lines/props entered for.
         players: q.get("slate") === "1" ? slatePlayers : null,
       });
+      // NBA: next opponent, pace / DRtg / defense-vs-position ranks and Model % (skipped for past dates).
+      if (sport === "nba" && !grid.asOf.beforeDate) decorateNbaGrid(grid, doc, { stat, season, ctx: nbaContextFor(doc), injuries: await nbaInjuries(env) });
       return json({ ...grid, source, generatedAt: doc.generatedAt || null, latestGameDate: doc.latestGameDate || null,
         markets: Object.fromEntries(Object.entries(markets).map(([k, v]) => [k, v.label])) }, 200, origin);
+    }
+
+    // ---- NBA Board: Kalshi NBA prop ladders in a price band, ranked by the model ----
+    // GET /api/nba-board?stat=points&band=66-75&limit=25&date=2026-10-22&refresh=1&sort=market|model&allRungs=1
+    // One stat per request (the page asks for each market in parallel and merges).
+    if (pathname === "/api/nba-board" && request.method === "GET") {
+      if (!checkAuth(request, env)) return json({ error: "unauthorized" }, 401, origin);
+      const q = url.searchParams;
+      const stat = q.get("stat") || "points";
+      if (!KALSHI_NBA_SERIES[stat]) return json({ error: "unknown stat", stats: Object.keys(KALSHI_NBA_SERIES) }, 400, origin);
+      const bandM = String(q.get("band") || "66-75").match(/^(\d{2})-(\d{2})$/);
+      let lo = bandM ? Number(bandM[1]) / 100 : 0.66, hi = bandM ? Number(bandM[2]) / 100 : 0.75;
+      if (!(lo >= 0.5 && hi <= 0.97 && lo < hi)) { lo = 0.66; hi = 0.75; }
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(q.get("date") || "") ? q.get("date") : null;
+      const limitN = Math.min(100, Math.max(1, parseInt(q.get("limit"), 10) || 25));
+      const doc = await readJsonCached(env.PROP_DATA, NBA_TREND_LOGS_KEY, null);
+      if (!doc || !Array.isArray(doc.players) || !doc.players.length) {
+        return json({ error: "no NBA game logs yet", hint: "Run the 'Compute NBA trend logs' GitHub Action, then Data > Refresh stat feeds." }, 503, origin);
+      }
+      let km;
+      try { km = await kalshiNbaMarkets(env, stat, date, q.get("refresh") === "1"); }
+      catch (err) { return json({ error: "could not reach Kalshi", detail: String(err && err.message || err).slice(0, 120) }, 502, origin); }
+      const season = Number(doc.season) || Number(String(doc.season || "").split("-")[0]) || new Date().getUTCFullYear();
+      const board = buildNbaBoard({ markets: km.markets, doc, ctx: nbaContextFor(doc), season, band: [lo, hi], limit: limitN,
+        injuries: await nbaInjuries(env), sortBy: q.get("sort") === "model" ? "model" : "market",
+        onePerPlayer: q.get("allRungs") !== "1", dnpRule: String(env.KALSHI_DNP_RULE || "no").trim() === "void" ? "void" : "no" });
+      return json({ ...board, stat, date: km.date, availableDates: km.availableDates, games: km.games, marketsSeen: km.markets.length,
+        pricesFetchedAt: km.fetchedAt, pricesCached: km.cached, logsGeneratedAt: doc.generatedAt || null,
+        scheduleIncluded: Array.isArray(doc.upcoming) && doc.upcoming.length > 0, source: "Kalshi public market data" }, 200, origin);
     }
 
     // ---- NBA lines for the NBA Tendency Matrix (Line column and "my slate") ----
@@ -508,7 +650,8 @@ const app = {
   // CPU-time limit. The fetch target is a fixed constant from env, never
   // derived from user input, to avoid any SSRF-style risk.
   async scheduled(event, env, ctx) {
-    await refreshExternalStats(env);
+    // The daily trigger only pulls the NBA file; the weekly ones pull everything.
+    await refreshExternalStats(env, event && event.cron === NBA_DAILY_CRON ? ["nba-trend-logs", "nba-injuries"] : null);
   },
 };
 
@@ -542,7 +685,7 @@ export default {
 // Both URLs come from configuration and are never derived from a request,
 // which rules out server-side request forgery through this path. Each fetch is
 // bounded by a timeout so a hung endpoint cannot stall the invocation.
-async function refreshExternalStats(env) {
+async function refreshExternalStats(env, only = null) {
   const feeds = [
     // Trimmed because a URL pasted into a prompt commonly carries a trailing
     // newline or space, which makes fetch() throw a bare TypeError rather than
@@ -551,10 +694,12 @@ async function refreshExternalStats(env) {
     { name: "player-stats", url: String(env.PLAYER_STATS_URL || "").trim(), key: PLAYER_STATS_KEY },
     { name: "trend-logs", url: String(env.TREND_LOGS_URL || "").trim(), key: TREND_LOGS_KEY },
     { name: "nba-trend-logs", url: String(env.NBA_TREND_LOGS_URL || "").trim(), key: NBA_TREND_LOGS_KEY },
+    { name: "nba-injuries", url: nbaInjuriesUrl(env), key: NBA_INJURIES_KEY },
   ];
   const results = [];
 
   for (const feed of feeds) {
+    if (only && !only.includes(feed.name)) continue;
     if (!feed.url) {
       results.push({ feed: feed.name, ok: false, reason: "URL not configured" });
       continue;
@@ -571,6 +716,7 @@ async function refreshExternalStats(env) {
       // Shape check before trusting external data, so a malformed or
       // unexpected payload cannot replace good stored data with garbage.
       if (data && typeof data === "object" && Array.isArray(data.players)) {
+        if (feed.key === NBA_INJURIES_KEY) data._pulledAt = new Date().toISOString();
         await writeJson(env.PROP_DATA, feed.key, data);
         results.push({
           feed: feed.name, ok: true,
@@ -698,6 +844,11 @@ const HTML = `<!doctype html>
   table.tg .bar > i { display:block; height:4px; background:var(--bar); border-radius:3px; }
   table.tg th.sorted { color:var(--accent); }
   table.tg td.vals { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .inj { display:inline-block; font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:999px; margin-left:4px; vertical-align:1px;
+    color:#9a5b00; background:#fdf0d5; background:color-mix(in srgb, #e8a317 22%, transparent); }
+  .inj.out { color:var(--red); background:#fde2e2; background:color-mix(in srgb, var(--red) 16%, transparent); }
+  .inj.ok { color:var(--muted); background:var(--surface-2); }
+  .tmout { display:block; font-size:11.5px; color:var(--muted); margin-top:2px; }
   .grade { display:inline-block; min-width:30px; text-align:center; padding:2px 7px; border-radius:7px; font-weight:800; font-size:12px; }
   .grade.g-A { background:var(--heat4); color:var(--ink); } .grade.g-B { background:var(--heat2); color:var(--ink); border:1px solid var(--line); }
   .grade.g-C { background:var(--heat1); color:var(--ink); }
@@ -755,6 +906,7 @@ const HTML = `<!doctype html>
     <button data-tab="trends">Tendency Matrix</button>
     <span class="group">NBA</span>
     <button data-tab="nbatrends">Tendency Matrix</button>
+    <button data-tab="nbaboard">Board</button>
     <span class="group">Info</span>
     <button data-tab="about">About</button>
   </nav>
@@ -868,6 +1020,33 @@ const HTML = `<!doctype html>
     <div id="nbWrap" class="tablewrap"></div>
   </section>
 
+  <section id="nbaboard">
+    <h2>NBA Board</h2>
+    <p class="hint">Kalshi NBA player-prop ladders for the next game day. A side is kept when its <b>buy price</b> is inside the band (66&ndash;75% is roughly &minus;195 to &minus;300), the game has not started, the player is not listed Out or Doubtful, he has recent games and the model is not 10+ points below the market. One rung per player, stat and side. Sorted by <b>market price</b>, with the model as a check: the model has not been shown to beat the market, so ranking by it mostly ranks its own errors. <b>Research tool, not picks.</b> Check lineups before tip-off.</p>
+    <div class="tg-controls">
+      <div><label>Markets</label>
+        <label style="display:inline"><input type="checkbox" class="nbbStat" value="points" checked> Points</label>
+        <label style="display:inline"><input type="checkbox" class="nbbStat" value="rebounds" checked> Rebounds</label>
+        <label style="display:inline"><input type="checkbox" class="nbbStat" value="assists" checked> Assists</label>
+        <label style="display:inline"><input type="checkbox" class="nbbStat" value="threes" checked> 3-Pointers</label></div>
+      <div><label>Market price band</label><select id="nbbBand">
+        <option value="55-65">55&ndash;65% (about &minus;120 to &minus;185)</option>
+        <option value="60-70">60&ndash;70% (about &minus;150 to &minus;235)</option>
+        <option value="66-75" selected>66&ndash;75% (about &minus;195 to &minus;300)</option>
+        <option value="70-80">70&ndash;80% (about &minus;235 to &minus;400)</option>
+        <option value="75-85">75&ndash;85% (about &minus;300 to &minus;565)</option></select></div>
+      <div><label>Game day (blank = next)</label><input id="nbbDate" type="date" style="width:150px"></div>
+      <div><label>Sort by</label><select id="nbbSort">
+        <option value="market" selected>Market price (model as a veto)</option>
+        <option value="model">Model estimate (research view)</option></select></div>
+      <div><label>Rows</label><input id="nbbLimit" type="number" value="15" style="width:60px"></div>
+      <div><label><input type="checkbox" id="nbbAllRungs"> Every rung</label></div>
+      <div><label><input type="checkbox" id="nbbForce"> Fresh prices</label></div>
+      <div><button id="nbbRefresh">Refresh</button></div>
+    </div>
+    <div id="nbbWrap" class="tablewrap"></div>
+  </section>
+
   <section id="about" class="about">
     <h2>About this tool</h2>
     <p><b>Prop Model is a research tool.</b> It shows how players have performed recently (Tendency Matrices), what a statistical model projects for props you enter, and how one-sided each player's record has been against a line (tendency grades). It does not sell, offer or recommend picks, and nothing here is betting, financial or legal advice.</p>
@@ -950,6 +1129,7 @@ document.querySelectorAll("nav button[data-tab]").forEach(btn => {
     if (btn.dataset.tab === "top") loadTop();
     if (btn.dataset.tab === "trends") loadTrends();
     if (btn.dataset.tab === "nbatrends") { loadNbaLines(); loadNbaTrends(); }
+    if (btn.dataset.tab === "nbaboard") loadNbaBoard();
   });
 });
 
@@ -1104,9 +1284,14 @@ function renderTrendGrid(g) {
   let h = "<table class='tg'><tr><th>Player</th><th>Pos</th><th>Line</th><th title='" + esc(g.gradeNote || "") + "'>Tendency grade &#9432;</th>";
   g.cutoffs.forEach(c => { h += "<th class='" + (c === g.sortBy ? "sorted" : "") + "'>" + esc(c) + "+</th>"; });
   const showMin = g.rows.some(r => r.avgMinutes !== null && r.avgMinutes !== undefined);
-  h += "<th>Above line</th><th>Avg</th>" + (showMin ? "<th>Min</th>" : "") + "<th>Last " + esc(g.games) + " (newest first)</th></tr>";
+  const nbaCtx = g.sport === "nba" && g.rows.some(r => r.matchup || r.model);
+  h += "<th>Above line</th><th>Avg</th>" + (showMin ? "<th>Min</th>" : "");
+  if (nbaCtx) h += "<th title='" + esc(g.context ? g.context.note : "") + "'>Next opp &#9432;</th><th title='Opponent pace rank, 1 = fastest'>Pace</th><th title='Opponent defensive rating rank, 1 = best defense'>DRtg</th><th title='What the opponent allows to this position, 1 = least, 30 = most'>DvP</th><th title='Model estimate for the entered line (or the projected average when no line is entered). Not a pick.'>Model</th>";
+  h += "<th>Last " + esc(g.games) + " (newest first)</th></tr>";
   g.rows.forEach(r => {
-    h += "<tr><td><b>" + esc(r.player) + "</b> <span class='hint'>" + esc(r.team || "") + "</span></td><td>" + esc(r.position || "") + "</td>";
+    h += "<tr><td><b>" + esc(r.player) + "</b> <span class='hint'>" + esc(r.team || "") + "</span>" + injBadge(r.injury) +
+      (r.teammatesOut && r.teammatesOut.length ? "<span class='tmout'>Teammates out: " + r.teammatesOut.map(esc).join(", ") + "</span>" : "") +
+      "</td><td>" + esc(r.position || "") + "</td>";
     h += "<td>" + (r.line === null ? "-" : esc(r.line)) + "</td>";
     h += r.grade
       ? "<td title='" + esc(r.grade.basis + " (" + r.grade.percentile + "th percentile of graded lines). " + (g.gradeNote || "")) + "'><span class='grade g-" + esc(r.grade.letter.charAt(0)) + "'>" + esc(r.grade.letter) + "</span> <span class='hint'>" + (r.grade.direction === "above" ? "&#8593; above" : "&#8595; below") + "</span></td>"
@@ -1116,16 +1301,121 @@ function renderTrendGrid(g) {
       h += "<td class='cell c" + (b === null || b === undefined ? 2 : b) + "'>" + Math.round(v * 100) + "%<div class='bar'><i style='width:" + Math.round(v * 100) + "%'></i></div></td>";
     });
     h += "<td>" + (r.overLineRate === null ? "-" : Math.round(r.overLineRate * 100) + "%") + "</td>";
-    h += "<td>" + fmt(r.avg) + "</td>" + (showMin ? "<td>" + (r.avgMinutes === null ? "-" : fmt(r.avgMinutes)) + "</td>" : "") +
-      "<td class='vals' title='" + esc((r.weeks || []).join(", ")) + "'>" + r.values.map(fmt).map(esc).join(", ") + "</td></tr>";
+    h += "<td>" + fmt(r.avg) + "</td>" + (showMin ? "<td>" + (r.avgMinutes === null ? "-" : fmt(r.avgMinutes)) + "</td>" : "");
+    if (nbaCtx) {
+      const m = r.matchup, md = r.model;
+      h += m ? "<td>" + (m.home ? "vs " : "@ ") + esc(m.opp) + " <span class='hint'>" + esc(tipEt(m.tip)) + "</span></td>" : "<td class='hint'>-</td>";
+      h += "<td>" + rankCell(m && m.paceRank, "fast", "slow") + "</td><td>" + rankCell(m && m.drtgRank, "tough", "soft") + "</td>";
+      h += "<td>" + (m && m.dvp ? rankCell(m.dvp.rank, "tough", "soft", m.dvp.of) + " <span class='hint'>vs " + esc(m.dvp.group) + "</span>" : "<span class='hint'>-</span>") + "</td>";
+      h += "<td>" + (!md ? "-" : md.pOver !== null && md.pOver !== undefined
+        ? (md.pOver >= md.pUnder ? Math.round(md.pOver * 100) + "% over" : Math.round(md.pUnder * 100) + "% under") + " <span class='hint'>proj " + fmt(md.mean) + (md.pPlays < 1 ? ", if he plays (~" + Math.round(md.pPlays * 100) + "% chance)" : "") + "</span>"
+        : "<span class='hint'>proj " + fmt(md.mean) + "</span>") + "</td>";
+    }
+    h += "<td class='vals' title='" + esc((r.weeks || []).join(", ")) + "'>" + r.values.map(fmt).map(esc).join(", ") + "</td></tr>";
   });
   h += "</table><p class='hint'>" + esc(g.note) + " Data: " + esc(g.source) + (g.generatedAt ? ", generated " + esc(String(g.generatedAt).slice(0, 16).replace("T", " ")) + " UTC" : "") +
     (g.latestGameDate ? ". Latest game " + esc(g.latestGameDate) : "") +
     ". Lines come from " + (g.sport === "nba" ? "your NBA lines" : "props you have entered") + ". Sorted by " + esc(g.sortBy) + "+." +
     (g.windowSeasonFallback ? " No games yet this season, so the window uses last season." : "") +
+    (g.sport === "nba" ? " " + esc(injMeta(g.injuries)) : "") +
     " <b>Tendency grades</b> describe how one-sided each player's record against the entered line has been, ranked within this market. They are not predictions or picks; in testing, recent records against the line did not predict the next result.</p>";
   return h;
 }
+function injBadge(inj) {
+  if (!inj) return "";
+  const cls = inj.status === "Out" || inj.status === "Doubtful" ? "inj out" : inj.status === "Questionable" ? "inj" : "inj ok";
+  return "<span class='" + cls + "' title='" + esc(inj.status + (inj.reason ? ": " + inj.reason : "")) + "'>" + esc(inj.status) + "</span>";
+}
+function injMeta(m) {
+  if (!m) return "Injury report: not loaded yet (run the 'NBA injury report' GitHub Action).";
+  const t = m.reportTime ? new Date(m.reportTime).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET" : "";
+  return "Injury report: " + (m.source || "") + (t ? ", " + t : "") + (m.stale ? " (over 18 hours old)" : "") + ".";
+}
+function tipEt(iso) {
+  if (!iso) return "";
+  try { return new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" }) + " ET"; }
+  catch (e) { return ""; }
+}
+function rankCell(rank, lowWord, highWord, of) {
+  if (!rank) return "<span class='hint'>-</span>";
+  const n = of || 30, word = rank <= Math.round(n / 3) ? lowWord : rank > n - Math.round(n / 3) ? highWord : "";
+  return "#" + esc(rank) + (word ? " <span class='hint'>" + esc(word) + "</span>" : "");
+}
+function amOdds(p) {
+  if (!(p > 0 && p < 1)) return "";
+  return p >= 0.5 ? "-" + Math.round(100 * p / (1 - p)) : "+" + Math.round(100 * (1 - p) / p);
+}
+const NBB_LABEL = { points: "points", rebounds: "rebounds", assists: "assists", threes: "3-pointers" };
+async function loadNbaBoard() {
+  const wrap = document.getElementById("nbbWrap");
+  const stats = [...document.querySelectorAll(".nbbStat")].filter(x => x.checked).map(x => x.value);
+  if (!stats.length) { wrap.innerHTML = "<p class='hint'>Pick at least one market.</p>"; return; }
+  const band = document.getElementById("nbbBand").value, date = document.getElementById("nbbDate").value;
+  const limit = Math.max(1, Math.min(100, Number(document.getElementById("nbbLimit").value) || 15));
+  wrap.innerHTML = "<p class='hint'>Loading Kalshi prices...</p>";
+  const results = await Promise.all(stats.map(async st => {
+    const q = new URLSearchParams({ stat: st, band, limit: "100" });
+    if (date) q.set("date", date);
+    if (document.getElementById("nbbForce").checked) q.set("refresh", "1");
+    q.set("sort", document.getElementById("nbbSort").value);
+    if (document.getElementById("nbbAllRungs").checked) q.set("allRungs", "1");
+    const res = await fetch(API + "/api/nba-board?" + q.toString(), { headers: authHeaders() });
+    const data = await res.json().catch(() => ({}));
+    return { stat: st, ok: res.ok, data };
+  }));
+  const failed = results.filter(r => !r.ok);
+  const byModel = document.getElementById("nbbSort").value === "model";
+  const rows = results.filter(r => r.ok).flatMap(r => r.data.rows || [])
+    .sort(byModel ? (a, b) => b.model - a.model || b.market - a.market : (a, b) => b.market - a.market || b.model - a.model).slice(0, limit);
+  const ok = results.find(r => r.ok);
+  let h = "";
+  if (failed.length) h += "<p class='hint'>" + failed.map(f => esc(NBB_LABEL[f.stat]) + ": " + esc(f.data.error || "failed") + (f.data.detail ? " (" + esc(f.data.detail) + ")" : "") + (f.data.hint ? ". " + esc(f.data.hint) : "")).join("<br>") + "</p>";
+  if (!ok) { wrap.innerHTML = h; return; }
+  const d = ok.data;
+  h += "<p class='hint'>" + esc(injMeta(d.injuries)) + "</p>";
+  h += "<p class='hint'>Game day <b>" + esc(d.date) + "</b> &middot; " + esc(d.games) + " games &middot; prices " + esc(String(d.pricesFetchedAt || "").slice(11, 16)) + " UTC" +
+    (d.availableDates && d.availableDates.length > 1 ? " &middot; other days: " + d.availableDates.filter(x => x !== d.date).map(esc).join(", ") : "") + "</p>";
+  if (!rows.length) {
+    h += "<p class='hint'>Nothing in this band right now. Try another band or game day; lines usually post the morning of the game.</p>";
+  } else {
+    h += "<table class='tg'><tr><th>#</th><th>Player</th><th>Side</th><th title='Buy price for this side (the ask; mid when there is no quote)'>Market</th><th title='Model estimate, including his chance of playing when he is on the injury report. Not a pick.'>Model</th><th title='Model minus market. The model has not been shown to beat the market; large gaps are more often model error.'>Gap</th><th>Game</th><th title='Opponent pace rank (1 = fastest)'>Pace</th><th title='Opponent defensive rating rank (1 = best)'>DRtg</th><th title='What the opponent allows to this position (1 = least)'>DvP</th><th>Proj</th><th>Last 10 at this number</th></tr>";
+    rows.forEach((r, i) => {
+      const c = r.context || {}, gm = r.game || {};
+      const tm = (r.teammatesOut || []).map(t => esc(t.name) + (t.status === "Doubtful" ? " (D)" : "") + (t.minutes ? " " + esc(t.minutes) + "m" : ""));
+      h += "<tr><td>" + (i + 1) + "</td><td><b>" + esc(r.player) + "</b> <span class='hint'>" + esc(r.team || "") + " " + esc(r.position || "") + "</span>" + injBadge(r.injury) +
+        (r.reportPending ? " <span class='inj ok' title='This team has not submitted its injury report yet'>report pending</span>" : "") +
+        (r.flags && r.flags.backToBack ? " <span class='inj ok' title='His team played the day before (shown, not modeled)'>B2B</span>" : "") +
+        (r.flags && r.flags.returning ? " <span class='inj' title='First game in " + esc(r.flags.returning) + " days: minutes may be limited (shown, not modeled)'>back after " + esc(r.flags.returning) + "d</span>" : "") +
+        (r.otherRungs ? " <span class='hint' title='Other rungs of this market also qualified; the market favorite is shown'>+" + esc(r.otherRungs) + " rung" + (r.otherRungs > 1 ? "s" : "") + "</span>" : "") +
+        (r.sameGameRows ? " <span class='hint' title='He also appears in another market on this list; those results move together'>&#8635; " + esc(r.sameGameRows) + " more</span>" : "") +
+        (tm.length ? "<span class='tmout'>Teammates out: " + tm.join(", ") + "</span>" : "") + "</td>";
+      h += "<td>" + esc(r.side) + " " + esc(r.line) + " " + esc(NBB_LABEL[r.stat] || r.stat) + " <span class='hint'>(" + esc(r.rung) + ")</span></td>";
+      h += "<td>" + Math.round(r.market * 100) + "&cent; <span class='hint'>" + esc(amOdds(r.market)) + (r.priceBasis === "mid" ? " mid" : "") + "</span></td>";
+      h += "<td><b>" + Math.round(r.model * 100) + "%</b>" + (r.pPlays < 1 ? " <span class='hint' title='" + esc(Math.round(r.modelIfPlays * 100) + "% if he plays, times a rough " + Math.round(r.pPlays * 100) + "% chance he plays") + "'>(" + Math.round(r.modelIfPlays * 100) + "% if plays)</span>" : "") + (r.caution ? " <span title='" + esc(r.caution) + "'>&#9888;</span>" : "") + "</td>";
+      h += "<td>" + (r.gap >= 0 ? "+" : "") + Math.round(r.gap * 100) + "</td>";
+      h += "<td>" + (gm.opp ? (gm.home ? "vs " : "@ ") + esc(gm.opp) + " <span class='hint'>" + esc(tipEt(gm.tip)) + "</span>" : esc(gm.date || "")) + "</td>";
+      h += "<td>" + rankCell(c.paceRank, "fast", "slow") + "</td><td>" + rankCell(c.drtgRank, "tough", "soft") + "</td>";
+      h += "<td>" + (c.dvp ? rankCell(c.dvp.rank, "tough", "soft", c.dvp.of) : "<span class='hint'>-</span>") + "</td>";
+      h += "<td>" + (Math.round(r.projection * 10) / 10) + (r.minutes ? " <span class='hint'>" + Math.round(r.minutes) + " min</span>" : "") + "</td>";
+      h += "<td class='vals'>" + esc(r.last10Record) + ": " + r.last10.map(esc).join(", ") + "</td></tr>";
+    });
+    h += "</table>";
+  }
+  const ex = {};
+  results.filter(r => r.ok).forEach(r => Object.entries(r.data.excluded || {}).forEach(([k, v]) => { ex[k] = (ex[k] || 0) + v; }));
+  const unk = results.filter(r => r.ok).flatMap(r => r.data.unknownPlayers || []);
+  const hurt = [...new Map(results.filter(r => r.ok).flatMap(r => r.data.injuredSkipped || []).map(x => [x.name, x])).values()];
+  h += "<p class='hint'>" + esc(d.note) + " Skipped: " + esc(ex.injured || 0) + " lines for players listed Out or Doubtful" +
+    (hurt.length ? " (" + hurt.slice(0, 10).map(x => esc(x.name) + " " + esc(x.status)).join(", ") + (hurt.length > 10 ? ", ..." : "") + ")" : "") + ", " +
+    esc(ex.started || 0) + " already tipped off, " + esc(ex.notOnSchedule || 0) + " not on the schedule" +
+    (results.some(r => r.ok && (r.data.notOnSchedule || []).length) ? " (" + [...new Set(results.filter(r => r.ok).flatMap(r => r.data.notOnSchedule || []))].slice(0, 6).map(esc).join(", ") + ": postponed, moved or a stale schedule)" : "") + ", " +
+    esc(ex.inactive || 0) + " no recent games, " + esc(ex.duplicateRung || 0) + " extra rungs, " +
+    esc(ex.wideSpread || 0) + " wide spreads, " + esc(ex.modelDisagrees || 0) + " where the model disagrees by 10+ points, " + esc(ex.unknownPlayer || 0) + " players not in the game logs" +
+    (unk.length ? " (" + unk.slice(0, 8).map(esc).join(", ") + (unk.length > 8 ? ", ..." : "") + ")" : "") + "." +
+    (d.scheduleIncluded ? "" : " The NBA data has no schedule yet, so started games can't be detected: re-run the NBA GitHub Action and refresh stat feeds.") + "</p>";
+  wrap.innerHTML = h;
+}
+document.getElementById("nbbRefresh").addEventListener("click", loadNbaBoard);
 document.getElementById("tgRefresh").addEventListener("click", loadTrends);
 
 async function loadNbaTrends() {

@@ -1,0 +1,52 @@
+name: NBA injury report
+
+# Hourly from 11 AM to midnight ET (15:05-04:05 UTC), when teams post and update
+# the official report before games. Also runnable by hand.
+on:
+  schedule:
+    - cron: "5 15-23 * * *"
+    - cron: "5 0-4 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nba-injuries
+  cancel-in-progress: false
+
+jobs:
+  injuries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests pdfplumber pandas
+
+      # Official NBA report PDF first, ESPN feed as a fallback. Exits non-zero
+      # (and writes nothing) if both fail, so a failed run keeps the last good file.
+      - name: Fetch latest injury report
+        run: |
+          cd github-action && python compute_nba_injuries.py
+          mv nba-injuries.json ../
+          if [ -f nba-injury-history.json ]; then mv nba-injury-history.json ../; fi
+        timeout-minutes: 10
+
+      - name: Commit and push results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add nba-injuries.json
+          [ -f nba-injury-history.json ] && git add nba-injury-history.json
+          if git diff --quiet --cached; then
+            echo "Nothing to commit."
+          else
+            git commit -m "Update NBA injury report"
+            git pull --rebase
+            git push
+          fi

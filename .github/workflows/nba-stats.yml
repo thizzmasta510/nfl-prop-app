@@ -4,7 +4,12 @@ name: Compute NBA trend logs
 on:
   schedule:
     - cron: "10 14 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      history:
+        description: "Build the full two-season history for backtests (uploaded as a download, not committed)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -27,10 +32,27 @@ jobs:
       # Tries cdn.nba.com first (box scores), then stats.nba.com. Exits non-zero
       # (and writes nothing) if both fail, so a failed run never replaces good data.
       - name: Compute NBA game logs
+        if: ${{ !inputs.history }}
         run: cd github-action && python compute_nba_logs.py && mv nba-trend-logs.json ../
         timeout-minutes: 30
 
+      # Full history for the point-in-time calibration backtest. Uploaded as a
+      # workflow artifact (Actions run page > Artifacts), never committed.
+      - name: Build full NBA history (backtest only)
+        if: ${{ inputs.history }}
+        run: cd github-action && python compute_nba_logs.py --all --out ../nba-history.json
+        timeout-minutes: 60
+
+      - name: Upload history
+        if: ${{ inputs.history }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nba-history
+          path: nba-history.json
+          retention-days: 7
+
       - name: Commit and push results
+        if: ${{ !inputs.history }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

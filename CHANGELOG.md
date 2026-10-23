@@ -837,3 +837,59 @@ averaged when no v9 single score is present. Verified by simulation.
 - "Trend Grid" is now **Tendency Matrix** everywhere it is shown (tabs, headings, About page,
   docs). Internal names (`src/trends.js`, `/api/trends`, `trend-logs.json`) are unchanged so
   existing data and links keep working. "Trend grades" are now **tendency grades** to match.
+
+## NBA matchup context and NBA Board (Oct 21, 2026)
+- **NBA's DVOA stand-ins**, computed from the NBA box scores the daily job already pulls:
+  opponent **pace** (possessions per 48), **defensive rating** (points allowed per 100
+  possessions) and **defense vs position** (what a team allows to opposing starting
+  guards / forwards / centers). This season is blended with last season early on (last
+  season counts as 10 games, then fades). Computed as of a date, so backtests never see
+  later games. `src/nba_model.js`.
+- `compute_nba_logs.py` now also writes `teamGames` (points, opponent points, possession
+  estimate FGA - ORB + TOV + 0.44 FTA, minutes incl. overtime) and `upcoming` (next 8 days
+  of scheduled games with tip-off times).
+- **NBA Tendency Matrix** gains Next opp, Pace, DRtg, DvP and Model columns. Model is the
+  estimate for an entered line (or the projected average), from per-minute production
+  (recent games weighted more) x projected minutes x a matchup factor capped at +/-15%,
+  with a negative binomial spread per stat.
+- **NBA Board** tab (`/api/nba-board`): the NFL "most probable near -250" workflow,
+  automated. Pulls Kalshi's public NBA prop ladders (points, rebounds, assists, threes)
+  for the next game day, keeps sides priced inside a band (default 66-75%), drops games
+  that have tipped off, players with no recent games, wide spreads and sides where the
+  model is 10+ points below the market, and ranks the rest by the model. One stat per
+  request (Workers CPU/subrequest limits); prices cached 5 minutes in R2.
+- Daily 14:30 UTC cron pulls only the NBA file, so the schedule and logs stay current.
+- `backtest/nba_model_calibration.mjs`: walk-forward calibration (Brier, reliability
+  table, the 66-75% band) against a last-10 hit-rate baseline. `test/nba_model.test.mjs`.
+
+## NBA injury scan (Oct 21, 2026)
+- `github-action/compute_nba_injuries.py` + `.github/workflows/nba-injuries.yml` (hourly,
+  11 AM to midnight ET): reads the newest **official NBA injury report** PDF (posted every
+  15 minutes on game days) and falls back to ESPN's injuries feed. Writes
+  `nba-injuries.json` (player, team, status, reason, game) and teams whose report is
+  "NOT YET SUBMITTED". Commits only when the report changed.
+- The Worker re-pulls that file when its copy is older than 20 minutes (URL defaults to
+  the same folder as `NBA_TREND_LOGS_URL`; override with `NBA_INJURIES_URL`).
+- **NBA Board**: lines for players listed **Out or Doubtful are skipped** (and listed),
+  **Questionable** players get a badge with the reason, each row lists **teammates who are
+  out** with their recent minutes, and teams whose report is pending are marked. The
+  projection is not adjusted for teammates out (untested), so that is shown, not modeled.
+- **NBA Tendency Matrix**: status badge and teammates-out note on each player.
+
+## NBA review round 1 (Oct 21, 2026)
+- Variance by the law of total variance: per-minute dispersion from residuals at actual
+  minutes + projected-minutes uncertainty; stronger shrinkage for low-count stats.
+- Matchup: DvP for scoring stats is measured beyond the opponent's overall DRtg (no
+  double count); cap saturation reported; `--pace league` option to test the
+  alternative pace formula on real data (kept `(T+O-L)/T`).
+- Board: band and sort on the **buy price**; default sort by market price with the model
+  as a veto (model sort kept as a research view); one rung per player/stat/side; Gap
+  column; P(plays) mixture for Questionable/Probable (unfitted defaults;
+  `KALSHI_DNP_RULE`); separate "tipped off" vs "not on schedule" counts; back-to-back,
+  back-from-absence and same-player flags.
+- Injury matching: exact name on another team only when unique in the report.
+- `compute_nba_logs.py --all` and the `history` workflow input (artifact, not committed)
+  for point-in-time backtests; calibration scores unclamped probabilities and warns about
+  survivorship on trimmed files.
+- `nba-injury-history.json` (last pre-tip status per game) and
+  `backtest/nba_play_rates.mjs` to fit the chance of playing by status.

@@ -20,6 +20,10 @@ or charge for it. This is not legal advice.
 - The grade column header and each grade carry a tooltip with the same "not a probability,
   prediction or pick" note.
 
+- The **NBA Board** lists Kalshi lines priced inside a band and sorts them by the model's
+  estimate. The column is "Side," not "Pick," the header says "Research tool, not picks,"
+  and a model far above the market carries a warning that it is more often model error.
+
 ## Do / don't
 | Do say | Don't say |
 |---|---|

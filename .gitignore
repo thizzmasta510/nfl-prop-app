@@ -33,3 +33,4 @@ sgo_*raw*.json
 *.pem
 *.key
 backtest/market_vs_model_rows.json
+nba-history.json
