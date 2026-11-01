@@ -45,24 +45,35 @@ TEAMS = {
     "Phoenix Suns": "PHX", "Portland Trail Blazers": "POR", "Sacramento Kings": "SAC", "San Antonio Spurs": "SAS",
     "Toronto Raptors": "TOR", "Utah Jazz": "UTA", "Washington Wizards": "WAS",
 }
-_TEAM_RE = "|".join(sorted((re.escape(t) for t in TEAMS), key=len, reverse=True))
+# PDF text extraction sometimes drops the spaces inside cells ("BostonCeltics",
+# "BrownJr.,Mikel"), so every multi-word pattern below allows the space to be missing.
+_TEAM_KEY = {re.sub(r"\s+", "", t).lower(): t for t in TEAMS}
+_TEAM_RE = "|".join(sorted((r"\s*".join(re.escape(w) for w in t.split()) for t in TEAMS), key=len, reverse=True))
 _STATUS_RE = "|".join(STATUSES)
+_LEAD = (r"^(?:(?P<date>\d{2}/\d{2}/\d{4})\s*)?"
+         r"(?:(?P<time>\d{1,2}:\d{2})\s*\(ET\)\s*)?"
+         r"(?:(?P<matchup>[A-Z]{2,3}@[A-Z]{2,3})\s*)?")
 ROW_RE = re.compile(
-    r"^(?:(?P<date>\d{2}/\d{2}/\d{4})\s+)?"
-    r"(?:(?P<time>\d{1,2}:\d{2})\s*\(ET\)\s+)?"
-    r"(?:(?P<matchup>[A-Z]{2,3}@[A-Z]{2,3})\s+)?"
-    rf"(?:(?P<team>{_TEAM_RE})\s+)?"
+    _LEAD + rf"(?:(?P<team>{_TEAM_RE})\s*)?"
     r"(?P<player>[A-Z][^,]{0,40},\s*[^,]{1,40}?)\s+"
     rf"(?P<status>{_STATUS_RE})\b\s*(?P<reason>.*)$")
-NOT_SUBMITTED_RE = re.compile(
-    r"^(?:(?P<date>\d{2}/\d{2}/\d{4})\s+)?(?:(?P<time>\d{1,2}:\d{2})\s*\(ET\)\s+)?(?:(?P<matchup>[A-Z]{2,3}@[A-Z]{2,3})\s+)?"
-    rf"(?P<team>{_TEAM_RE})\s+NOT YET SUBMITTED", re.I)
-SKIP_RE = re.compile(r"^(Injury Report:|Page \d+ of \d+|Game Date\s+Game Time)", re.I)
+NOT_SUBMITTED_RE = re.compile(_LEAD + rf"(?P<team>{_TEAM_RE})\s*NOT\s*YET\s*SUBMITTED", re.I)
+SKIP_RE = re.compile(r"^(Injury\s*Report:|Game\s*Date\s*Game\s*Time)", re.I)
+PAGE_RE = re.compile(r"\s*Page\s*\d+\s*of\s*\d+\s*", re.I)   # page footer, sometimes mid-line
+SUFFIX_GLUE_RE = re.compile(r"(?<=[a-z])(Jr\.?|Sr\.?|III|II|IV)(?=,|$|\s)")
+
+
+def team_code(raw):
+    """'Boston Celtics' or 'BostonCeltics' -> 'BOS'."""
+    if not raw:
+        return None
+    return TEAMS.get(_TEAM_KEY.get(re.sub(r"\s+", "", raw).lower(), ""))
 
 
 def flip_name(last_first):
-    """'Harper Jr., Ron' -> 'Ron Harper Jr.'"""
+    """'Harper Jr., Ron' -> 'Ron Harper Jr.' (also 'HarperJr.,Ron')."""
     last, _, first = last_first.partition(",")
+    last = SUFFIX_GLUE_RE.sub(r" \1", last.strip())
     return f"{first.strip()} {last.strip()}".strip()
 
 
@@ -73,7 +84,7 @@ def parse_report_text(text):
     cur = {"date": None, "time": None, "matchup": None, "team": None}
     last = None
     for raw in (text or "").splitlines():
-        line = " ".join(raw.split())
+        line = " ".join(PAGE_RE.sub(" ", raw).split())
         if not line or SKIP_RE.match(line):
             continue
         ns = NOT_SUBMITTED_RE.match(line)
@@ -82,7 +93,7 @@ def parse_report_text(text):
                 if ns.group(k):
                     cur[k] = ns.group(k)
             cur["team"] = ns.group("team")
-            not_submitted.append({"team": TEAMS[ns.group("team")], "matchup": cur["matchup"], "date": _iso(cur["date"])})
+            not_submitted.append({"team": team_code(ns.group("team")), "matchup": cur["matchup"], "date": _iso(cur["date"])})
             last = None
             continue
         m = ROW_RE.match(line)
@@ -93,21 +104,38 @@ def parse_report_text(text):
                     if k == "matchup":
                         cur["team"] = m.group("team") or None  # new game: team must be restated
             name = flip_name(m.group("player"))
+            code = team_code(cur["team"])
+            # The team must be one of the two in this game; anything else is a parsing slip.
+            if code and cur["matchup"] and code not in cur["matchup"].split("@"):
+                code = None
             last = {
                 "name": name, "norm": normalize_name(name),
-                "team": TEAMS.get(cur["team"]) if cur["team"] else None,
+                "team": code,
                 "status": m.group("status"), "reason": m.group("reason").strip(),
                 "game": {"date": _iso(cur["date"]), "time": cur["time"], "matchup": cur["matchup"]},
             }
             players.append(last)
             continue
-        if last is not None:  # wrapped reason text
-            last["reason"] = (last["reason"] + " " + line).strip()
+        # Lines that are not rows are wrapped reason text. In the extracted text a wrapped
+        # reason can land above its own row, so it can't be attached reliably: skip it.
     for p in players:
-        p["reason"] = re.sub(r"^Injury/Illness\s*-\s*", "", p["reason"]).strip()
-        if p["team"] is None and p["game"]["matchup"]:
-            p["team"] = None  # leave unknown rather than guess
+        # A neighbor's wrapped reason can share the line: keep only the first reason.
+        r = p["reason"]
+        k = r.find("Injury/Illness", 1)
+        if k > 0:
+            r = r[:k]
+        p["reason"] = re.sub(r"^Injury/Illness\s*-\s*", "", r).strip()
     return players, not_submitted
+
+
+MIN_TEAM_SHARE = 0.9
+
+
+def report_quality(players):
+    """Share of rows with a team. Rows without one can't be matched to the board."""
+    if not players:
+        return 0.0
+    return sum(1 for p in players if p.get("team")) / len(players)
 
 
 def _iso(mdy):
@@ -152,6 +180,11 @@ def from_official(session, now_et=None, pdf_text=None):
         if not players and not ns:
             print(f"  {url}: no rows parsed")
             continue
+        q = report_quality(players)
+        if players and q < MIN_TEAM_SHARE:
+            # Don't publish a report we can't read properly; ESPN is the fallback.
+            print(f"  {url}: only {q:.0%} of {len(players)} rows have a team; not using this report")
+            return None
         print(f"official report {t.strftime('%Y-%m-%d %I:%M %p')} ET: {len(players)} players")
         return {"source": "NBA official injury report", "reportUrl": url,
                 "reportTime": t.isoformat(), "players": players, "notSubmitted": ns}
@@ -160,8 +193,10 @@ def from_official(session, now_et=None, pdf_text=None):
 
 def _pdf_text(content):
     import pdfplumber
+    # The report's letters are tightly spaced; pdfplumber's default x_tolerance (3)
+    # merges words ("BostonCeltics"). A smaller tolerance keeps the spaces.
     with pdfplumber.open(io.BytesIO(content)) as pdf:
-        return "\n".join((page.extract_text() or "") for page in pdf.pages)
+        return "\n".join((page.extract_text(x_tolerance=1) or "") for page in pdf.pages)
 
 
 ESPN_STATUS = {"out": "Out", "doubtful": "Doubtful", "questionable": "Questionable", "day-to-day": "Questionable",

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node test/trends.test.mjs && node test/trends_nba.test.mjs && node test/cache.test.mjs && node test/backtest_keys.test.mjs && node test/security.test.mjs && node test/nba_model.test.mjs",
+    "test": "node test/trends.test.mjs && node test/trends_nba.test.mjs && node test/cache.test.mjs && node test/backtest_keys.test.mjs && node test/security.test.mjs && node test/nba_model.test.mjs && node test/nfl_board.test.mjs && node test/users.test.mjs && node test/game_script.test.mjs && node test/tracker.test.mjs",
     "backtest:trends": "node backtest/trend_backtest.mjs --props sgo_backfill.json",
     "backtest:trends:nba": "node backtest/trend_backtest.mjs --league nba --props sgo_backfill_nba.json --games 10",
     "backtest:nba-model": "node backtest/nba_model_calibration.mjs nba-trend-logs.json"

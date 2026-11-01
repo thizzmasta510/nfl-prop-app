@@ -21,6 +21,85 @@ from compute_player_stats import (
 
 KEEP_GAMES = 10
 REG_MAX_WEEK = 18
+SCHEDULE_URL = "https://github.com/nflverse/nfldata/raw/master/data/games.csv"
+
+
+def load_games():
+    """nflverse games.csv (schedule, results, closing spread and total). None if unavailable."""
+    try:
+        return pd.read_csv(SCHEDULE_URL)
+    except Exception as e:  # network or format problem: the Board then can't skip started games
+        print(f"schedule unavailable: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+
+
+def _num(v):
+    try:
+        f = float(v)
+        return None if f != f else f
+    except (TypeError, ValueError):
+        return None
+
+
+def upcoming_schedule(season, now=None, games=None):
+    """Regular-season games of `season` not yet played, with kickoff in UTC
+    (nflverse games.csv lists gameday + gametime in US Eastern time). Used by the
+    NFL Board to skip games that have kicked off. Empty list if unavailable.
+    Each game also carries nflverse's spread_line (positive = home favored) and
+    total_line when posted, for the model's game-script adjustment."""
+    from zoneinfo import ZoneInfo
+    now = now or datetime.now(timezone.utc)
+    g = games if games is not None else load_games()
+    if g is None:
+        return []
+    g = g[(g["season"] == season) & (g["game_type"].astype(str) == "REG")]
+    out = []
+    for _, r in g.iterrows():
+        if pd.notna(r.get("result")):
+            continue
+        try:
+            t = datetime.strptime(f"{r['gameday']} {r['gametime']}", "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("America/New_York"))
+        except (ValueError, TypeError):
+            continue
+        tu = t.astimezone(timezone.utc)
+        if tu < now - pd.Timedelta(hours=6) or (tu - now).days > 9:
+            continue
+        out.append({"week": int(r["week"]), "date": str(r["gameday"]), "kickoff": tu.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "away": str(r["away_team"]), "home": str(r["home_team"]),
+                    "spreadHome": _num(r.get("spread_line")), "total": _num(r.get("total_line"))})
+    out.sort(key=lambda x: x["kickoff"])
+    return out
+
+
+def played_lines(season, games=None):
+    """Closing spread and total for every played regular-season game of `season`,
+    one row per team (spread from that team's side, positive = favored), so the
+    model can measure this week's lines against the games already in a log."""
+    g = games if games is not None else load_games()
+    if g is None:
+        return []
+    g = g[(g["season"] == season) & (g["game_type"].astype(str) == "REG") & g["result"].notna()]
+    out = []
+    for _, r in g.iterrows():
+        sp, tot = _num(r.get("spread_line")), _num(r.get("total_line"))
+        if sp is None or tot is None:
+            continue
+        out.append({"week": int(r["week"]), "team": str(r["home_team"]), "spread": sp, "total": tot})
+        out.append({"week": int(r["week"]), "team": str(r["away_team"]), "spread": -sp, "total": tot})
+    return out
+
+
+def prior_season_averages(df, name_col, stat_cols):
+    """Per-player per-game averages for the previous season (all regular-season
+    games), so the model's 2025 baseline doesn't depend on the 10-game window."""
+    out = {}
+    if df is None or not len(df):
+        return out
+    for name, grp in df.groupby(name_col):
+        avgs = {k: round(float(grp[c].mean()), 3) for k, c in stat_cols.items() if c in grp.columns and grp[c].notna().any()}
+        if avgs:
+            out[normalize_name(name)] = {"games": int(len(grp)), **avgs}
+    return out
 
 
 def regular_season(df):
@@ -31,7 +110,7 @@ def regular_season(df):
 
 def main():
     season = resolve_season()
-    frames = []
+    frames, prev_df = [], None
     for yr in (season, season - 1):
         df, used = load("weekly", yr, fallback_seasons=0)
         if df is None or not len(df):
@@ -40,6 +119,8 @@ def main():
         if "season" not in df.columns:
             df["season"] = used
         frames.append(regular_season(df))
+        if yr == season - 1:
+            prev_df = regular_season(df)
     if not frames:
         with open("trend-logs.json", "w") as f:
             json.dump({"generatedAt": datetime.now(timezone.utc).isoformat(), "players": [],
@@ -89,11 +170,20 @@ def main():
                 "stats": stats,
             })
 
+    prev_name_col = None
+    if prev_df is not None:
+        prev_name_col = "player_display_name" if "player_display_name" in prev_df.columns else "player_name"
+    games = load_games()
     payload = {
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "season": season,
         "gamesPerPlayer": KEEP_GAMES,
         "players": records,
+        # Previous season per-game averages (model baseline) and this week's schedule.
+        "priorSeason": prior_season_averages(prev_df, prev_name_col, STAT_COLUMNS) if prev_name_col else {},
+        "schedule": upcoming_schedule(season, games=games),
+        # Closing lines of this season's played games (game-script baseline).
+        "lines": played_lines(season, games=games),
     }
     with open("trend-logs.json", "w") as f:
         json.dump(payload, f, separators=(",", ":"))

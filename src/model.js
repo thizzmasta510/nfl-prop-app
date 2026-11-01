@@ -46,6 +46,7 @@
 // that only the calibration tracking can answer.
 // ============================================================
 
+import { gameScriptAdj, statForPropType } from "./game_script.js";
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function round1(x) { return Math.round(x * 10) / 10; }
 function round3(x) { return Math.round(x * 1000) / 1000; }
@@ -483,8 +484,20 @@ function scoreProp(p) {
     redZoneAdj = clamp(((Number(p.redZoneShare) - 0.20) / 0.20) * 0.15, -0.15, 0.15);
   }
 
+  // Game script from the betting lines (src/game_script.js, fitted on 2021-2025
+  // player games): favorites run more, underdogs and high team totals throw
+  // more. Optional inputs; with no lines the adjustment is 0.
+  //   teamSpread   points his team is favored by (negative = underdog)
+  //   gameTotal    the game's over/under
+  //   logAvgSpread / logAvgImplied   the same lines averaged over the games in
+  //                his log, so the scripts he already played in aren't counted twice
+  const gs = gameScriptAdj(statForPropType(p.propType), {
+    spread: p.teamSpread, total: p.gameTotal, avgSpread: p.logAvgSpread, avgImplied: p.logAvgImplied,
+  });
+  const gameScript = gs ? gs.adj : 0;
+
   const totalAdj = clamp(
-    matchupAdj + weatherAdj + roleAdj + usageAdj + efficiencyAdj + pressureAdj + redZoneAdj,
+    matchupAdj + weatherAdj + roleAdj + usageAdj + efficiencyAdj + pressureAdj + redZoneAdj + gameScript,
     -0.5, 0.5
   );
 
@@ -608,6 +621,8 @@ function scoreProp(p) {
     efficiencyAdj: round3(efficiencyAdj),
     pressureAdj: round3(pressureAdj),
     redZoneAdj: round3(redZoneAdj),
+    gameScriptAdj: round3(gameScript),
+    gameScriptSource: gs ? gs.source : "no lines",
     totalAdj: round3(totalAdj),
     finalProjection: round1(conditionalProjection),
     expectedValue: round1(expectedValue),

@@ -93,16 +93,43 @@ function backToBack(doc, team, date) {
  * as a No, so P(Over) = P(plays) x P(Over | plays); "void" uses P(Over | plays).
  * Check the contract terms on Kalshi and set KALSHI_DNP_RULE if they say void.
  */
+/**
+ * A limit price to rest instead of paying the ask: the side's mid + 1 cent, in whole
+ * cents (Kalshi's tick), never above the current buy price. Resting orders that fill
+ * as makers pay no fee on most Kalshi markets; taking the ask pays the spread plus the
+ * taker fee.
+ */
+export function suggestedLimit(mid, buy) {
+  const m = Number(mid);
+  if (!(m > 0 && m < 1)) return null;
+  let p = Math.floor((m + 0.01) * 100 + 1e-9) / 100;
+  const b = Number(buy);
+  if (b > 0 && b < 1 && p > b) p = b;
+  return Math.round(p * 100) / 100;
+}
+
+/** Board order. "edge" = model / price (expected return per dollar), the useful order for plus-money bands. */
+export function boardSort(sortBy) {
+  if (sortBy === "edge") return (a, b) => b.model / b.market - a.model / a.market || b.model - a.model;
+  if (sortBy === "model") return (a, b) => b.model - a.model || b.market - a.market;
+  return (a, b) => b.market - a.market || b.model - a.model;
+}
+
 export function buildNbaBoard(opts) {
   const { markets, doc, ctx, season } = opts;
   const nowMs = opts.nowMs ?? Date.now();
   const [lo, hi] = opts.band || [0.66, 0.75];
   const maxSpread = opts.maxSpread ?? 0.10, disagree = opts.disagree ?? 0.10, staleDays = opts.staleDays ?? 21;
-  const sortBy = opts.sortBy === "model" ? "model" : "market";
+  // Coin-flip band (about -110 to +100): a pick only makes sense where the model disagrees with
+  // the price, so minGap requires the model to be that far ABOVE the buy price; errorGap sets
+  // aside sides where the model is so far above that it is more likely a data error.
+  const minGap = Number.isFinite(opts.minGap) ? opts.minGap : null, errorGap = Number.isFinite(opts.errorGap) ? opts.errorGap : null;
+  const dataErrors = [];
+  const sortBy = ["model", "edge"].includes(opts.sortBy) ? opts.sortBy : "market";
   const onePerPlayer = opts.onePerPlayer !== false;
   const dnpRule = opts.dnpRule === "void" ? "void" : "no";
   const excluded = { unknownPlayer: 0, inactive: 0, started: 0, notOnSchedule: 0, wideSpread: 0, outOfBand: 0,
-    modelDisagrees: 0, fewGames: 0, injured: 0, duplicateRung: 0 };
+    modelDisagrees: 0, fewGames: 0, injured: 0, duplicateRung: 0, belowMinGap: 0, likelyDataError: 0 };
   const inj = opts.injuries || null;             // injuryIndex(...) or null
   const injuredSkipped = new Map(), notScheduled = new Set();
   const unknown = new Set();
@@ -161,6 +188,8 @@ export function buildNbaBoard(opts) {
       const price = s.buy !== null && s.buy > 0 && s.buy < 1 ? s.buy : s.mid;   // what you can actually get
       if (price < lo || price > hi) { excluded.outOfBand++; continue; }
       if (s.model < price - disagree) { excluded.modelDisagrees++; continue; }
+      if (minGap !== null && s.model < price + minGap) { excluded.belowMinGap++; continue; }
+      if (errorGap !== null && s.model - price > errorGap) { excluded.likelyDataError++; dataErrors.push({ player: p.name, side: s.side, line: mk.strike - 0.5, stat: mk.stat, model: s.model, market: price }); continue; }
       const O = ng && ctx && ctx.teams[ng.opp];
       const grp = posGroup(p.position);
       const d = ng && ctx && grp && ctx.dvp[ng.opp] && ctx.dvp[ng.opp][grp] && ctx.dvp[ng.opp][grp][mk.stat];
@@ -173,6 +202,7 @@ export function buildNbaBoard(opts) {
         player: p.name, norm: p.norm, team: p.team, position: p.position, stat: mk.stat, ticker: mk.ticker,
         side: s.side, line: mk.strike - 0.5, rung: `${mk.strike}+`,
         market: price, mid: s.mid, buy: s.buy, priceBasis: price === s.buy ? "buy" : "mid",
+        spread: mk.spread, limit: suggestedLimit(s.mid, s.buy),
         model: s.model, modelIfPlays: s.side === "Over" ? pOverIfPlays : 1 - pOverIfPlays, pPlays,
         gap: s.model - price,
         caution: s.model - price > 0.10 ? "model far above market: more likely model error than value" : null,
@@ -207,12 +237,10 @@ export function buildNbaBoard(opts) {
   const perPlayer = {};
   for (const r of rows) perPlayer[r.norm] = (perPlayer[r.norm] || 0) + 1;
   for (const r of rows) r.sameGameRows = perPlayer[r.norm] - 1;
-  rows.sort(sortBy === "model"
-    ? (a, b) => b.model - a.model || b.market - a.market
-    : (a, b) => b.market - a.market || b.model - a.model);
+  rows.sort(boardSort(sortBy));
   return {
     band: [lo, hi], priceBasis: "buy price (mid when there is no quote)", sortBy, dnpRule,
-    count: rows.length, excluded, unknownPlayers: [...unknown].slice(0, 25),
+    count: rows.length, excluded, unknownPlayers: [...unknown].slice(0, 25), minGap, dataErrors: dataErrors.slice(0, 15),
     injuredSkipped: [...injuredSkipped].slice(0, 25).map(([name, status]) => ({ name, status })),
     notOnSchedule: [...notScheduled].slice(0, 25),
     injuries: inj ? inj.meta : null,

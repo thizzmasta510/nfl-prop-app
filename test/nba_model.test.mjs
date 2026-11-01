@@ -147,6 +147,12 @@ assert.equal(americanOdds(0.75), -300); assert.equal(americanOdds(0.25), 300);
   const silly = parseKalshiMarket(km("Mid G0: 5+ points", "KXNBAPTS-26OCT21XXXYYY-P-5", 0.26, 0.28), "points"); // market says 73% UNDER 4.5 for a 20-ppg guard
   const s2 = buildNbaBoard({ markets: [silly], doc, ctx, season: 2026, nowMs: now, band: [0.66, 0.75] });
   assert.equal(s2.rows.length, 0); assert.equal(s2.excluded.modelDisagrees, 1);
+  // Coin-flip band: 50/50 rungs qualify only where the model is 5+ points above the buy price.
+  const cf = buildNbaBoard({ markets, doc, ctx, season: 2026, nowMs: now, band: [0.48, 0.53], minGap: 0.05, errorGap: 0.15, sortBy: "model" });
+  for (const r of cf.rows) { assert.ok(r.market >= 0.48 && r.market <= 0.53); assert.ok(r.model >= r.market + 0.05 && r.model - r.market <= 0.15); }
+  assert.ok(cf.excluded.belowMinGap + cf.excluded.likelyDataError + cf.rows.length >= 1, JSON.stringify(cf.excluded));
+  const cf0 = buildNbaBoard({ markets, doc, ctx, season: 2026, nowMs: now, band: [0.48, 0.53] });
+  assert.ok(cf0.rows.length >= cf.rows.length, "without minGap nothing extra is filtered");
 }
 
 // --- Matrix decoration

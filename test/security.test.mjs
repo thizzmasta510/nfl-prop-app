@@ -55,6 +55,7 @@ const tampered = h + "." + b64u(JSON.stringify({ aud: [AUD], iss: `https://${tea
 assert.equal((await verifyAccessJwt(req({ "cf-access-jwt-assertion": tampered }), aenv, fakeFetch)).reason, "bad signature");
 assert.equal((await verifyAccessJwt(req(), aenv, fakeFetch)).ok, false, "no token");
 assert.equal((await authorize(req({ "cf-access-jwt-assertion": good }), aenv, { fetch: fakeFetch })).ok, true, "Access alone is enough");
+assert.equal((await authorize(req({ "cf-access-jwt-assertion": good }), aenv, { fetch: fakeFetch })).email, "me@example.com", "the Access email is passed on");
 assert.equal((await authorize(req({ "cf-access-jwt-assertion": good }), { ...aenv, APP_SECRET: "pw" }, { fetch: fakeFetch })).status, 401, "Access + password requires both");
 
 // 4) Headers: every response has the security headers; the page's CSP pins the script by hash.

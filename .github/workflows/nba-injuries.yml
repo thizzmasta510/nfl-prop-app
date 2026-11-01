@@ -1,10 +1,10 @@
 name: NBA injury report
 
-# Hourly from 11 AM to midnight ET (15:05-04:05 UTC), when teams post and update
+# Hourly from 8 AM to midnight ET (13:05-04:05 UTC), when teams post and update
 # the official report before games. Also runnable by hand.
 on:
   schedule:
-    - cron: "5 15-23 * * *"
+    - cron: "5 13-23 * * *"
     - cron: "5 0-4 * * *"
   workflow_dispatch: {}
 
@@ -30,6 +30,11 @@ jobs:
 
       # Official NBA report PDF first, ESPN feed as a fallback. Exits non-zero
       # (and writes nothing) if both fail, so a failed run keeps the last good file.
+      # Parser fixtures (including the garbled Nov 1 text): a broken parser fails here
+      # and the last good file is kept.
+      - name: Test the report parser
+        run: cd github-action && python test_nba_injuries.py
+
       - name: Fetch latest injury report
         run: |
           cd github-action && python compute_nba_injuries.py

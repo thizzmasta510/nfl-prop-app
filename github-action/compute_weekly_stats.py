@@ -194,6 +194,21 @@ def compute_defensive_epa(pbp: pd.DataFrame) -> pd.DataFrame:
     return grouped.rename(columns={"defteam": "team"})[["team", "week", "def_epa_per_play"]]
 
 
+def compute_season_defense(pbp: pd.DataFrame) -> list:
+    """Season-to-date defensive EPA allowed per play (play-weighted, run + pass),
+    ranked 1 = best defense (fewest expected points allowed). A steadier matchup
+    input than any single week; used by the NFL Board as the opponent defense rank."""
+    plays = pbp[pbp["play_type"].isin(["run", "pass"])].copy()
+    if "season_type" in plays.columns:
+        plays = plays[plays["season_type"].astype(str).str.upper().isin(["REG", "REGULAR"])]
+    if plays.empty or "epa" not in plays.columns or "defteam" not in plays.columns:
+        return []
+    g = plays.groupby("defteam").agg(epa=("epa", "mean"), plays=("epa", "count")).reset_index()
+    g = g.sort_values("epa").reset_index(drop=True)
+    return [{"team": str(r["defteam"]), "seasonDefEpaPerPlay": round(float(r["epa"]), 4),
+             "defRank": int(i + 1), "plays": int(r["plays"])} for i, r in g.iterrows()]
+
+
 def compute_pressure_rate(pbp: pd.DataFrame) -> pd.DataFrame:
     """Team-level pressure rate allowed on dropbacks (sacks + hits + hurries)."""
     dropbacks = pbp[pbp["qb_dropback"] == 1].copy()
@@ -284,6 +299,7 @@ def main():
         "season": season,
         "players": players,   # red zone share, keyed by player
         "teams": teams,       # pressure rate allowed, keyed by team (applies to that team's QB)
+        "defense": compute_season_defense(pbp),  # season-to-date EPA/play allowed + rank (1 = best)
     }
 
     with open("weekly-stats.json", "w") as f:

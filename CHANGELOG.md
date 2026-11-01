@@ -893,3 +893,45 @@ averaged when no v9 single score is present. Verified by simulation.
   survivorship on trimmed files.
 - `nba-injury-history.json` (last pre-tip status per game) and
   `backtest/nba_play_rates.mjs` to fit the chance of playing by status.
+
+## NFL Board from Kalshi (Oct 23, 2026)
+- **NFL Board** tab (`/api/nfl-board`): every Kalshi NFL player-prop rung, straight from
+  Kalshi's public market data (series KXNFLREC, KXNFLRECYDS, KXNFLRSHYDS, KXNFLRSHATT,
+  KXNFLPASSYDS), scored with the NFL model. Kept when the buy price is inside the band,
+  spread at most 14 cents, game not kicked off, model not 10+ points below the market;
+  sides 15+ points above the market are listed separately as likely data errors.
+  Sorted by model (the weekly-PDF format) or by market.
+- `compute_trend_logs.py` now writes `priorSeason` (last season's per-game averages, the
+  model baseline) and `schedule` (unplayed games for the next 9 days with UTC kickoffs from
+  nflverse games.csv). `compute_weekly_stats.py` writes `defense` (season-to-date
+  defensive EPA per play and rank, 1 = best).
+- Kalshi event listing no longer filters by status (upcoming games' events were not
+  reported as "open"); the day comes from the event ticker, defaulting to the first day
+  with a full slate. Applies to the NBA Board too.
+
+## Per-account data (Oct 23, 2026)
+- With Cloudflare Access on, each signed-in email gets its own saved props, tracker and
+  NBA lines (stored under a hash of the email in R2; shared game logs, injury files and
+  price caches stay shared). `src/users.js`.
+- `OWNER_EMAIL` (set as a secret, not in the public repo): the owner keeps the data saved
+  before this change, and only the owner can run Data > Refresh stat feeds.
+- `/api/me` and a "Signed in as ... · Sign out" line in the top bar.
+
+## Execution, CLV and price bands (Nov 1, 2026)
+- **Boards:** each row shows a suggested **limit** price (the side's mid + 1 cent, never above the ask)
+  and flags markets with a bid-ask spread over 5 cents. "I use limit orders" (More options) makes
+  Track record the limit price as the price paid, as a maker order (no fee on most Kalshi markets).
+- **Price bands:** 17-25%, 25-35%, 35-45% (plus money) and 48-53% on both boards, with an Edge sort
+  (model / price). Bands under 55% need the model 5+ points above the price. Historical sportsbook
+  data shows plus-money props lost about 18% and the model filter did not help: use with caution.
+- **My Picks, CLV:** picks tracked from a Board keep the Kalshi ticker, kickoff, and the side's mid
+  and spread. After kickoff, grading reads the side's closing mid from Kalshi's public candlesticks.
+  CLV = closing mid - price paid, split into execution (mid when tracked - paid) and market move
+  (close - mid when tracked). Closes from a candle 30+ minutes before kickoff are marked stale
+  and left out of the average.
+- **My Picks, fees:** units after Kalshi's estimated taker fee (7% x P x (1 - P) per contract;
+  0 for limit/maker picks).
+- **NBA injury report:** the PDF parser lost spaces ("BostonCeltics"), so no row had a team. Fixed
+  (tighter text extraction, space-tolerant patterns, team must be in the matchup), with a quality
+  gate that falls back to ESPN when under 90% of rows have a team, a fixture test run in the
+  workflow, and runs starting at 8 AM ET.

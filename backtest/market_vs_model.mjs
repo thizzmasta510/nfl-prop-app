@@ -14,6 +14,7 @@
  *  - Only props where the player has a row in the history for that week are graded
  *    (this drops players who did not play, whose props a book would void).
  *  - Integer lines (possible pushes) are skipped.
+ *  - Props where the player has no earlier game this season are skipped (model would fall back to the line itself).
  *  - Market probability = no-vig from the closing over/under prices.
  */
 import fs from "node:fs";
@@ -65,7 +66,7 @@ const imp = (o) => (o > 0 ? 100 / (o + 100) : -o / (-o + 100));
 const payout = (o) => (o > 0 ? o / 100 : 100 / -o);
 
 const out = [];
-const skip = { noMap: 0, intLine: 0, noOdds: 0, noHist: 0, noRow: 0, push: 0 };
+const skip = { noMap: 0, intLine: 0, noOdds: 0, noHist: 0, noRow: 0, push: 0, noLog: 0 };
 let agree = 0, agreeN = 0;
 for (const p of props) {
   const m = MAP[p.stat]; if (!m) { skip.noMap++; continue; }
@@ -82,7 +83,10 @@ for (const p of props) {
   const prior = list.filter((r) => r.week < week && r.stats[m.h] !== undefined);
   const gameLog = prior.slice().reverse().map((r) => r.stats[m.h]);
   const pb = baseline(norm, season, m.h);
-  if (!gameLog.length && pb === undefined) { skip.noHist++; continue; }
+  // LEAK GUARD: with no game log (and no last3/seasonAvg), scoreProp falls back to baseMean = line
+  // (model.js "No player data at all" branch), and lineIsEstimate does NOT block that branch.
+  // That would put the market line inside the "model", so those props are not graded.
+  if (!gameLog.length) { skip.noLog++; continue; }
   const sc = scoreProp({
     week, team: p.team || target[0].team, player: p.name, propType: m.label, line: p.close,
     gameLog, injuryStatus: "Healthy", roleVolumeScore: 5, gamesPlayed: gameLog.length,

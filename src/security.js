@@ -106,14 +106,16 @@ export function _resetLockouts() { FAILS.clear(); }
 
 /**
  * Decide whether an API request may proceed.
- * Returns { ok: true } or { ok: false, status, error }.
+ * Returns { ok: true, email } (email is the Access login, or null) or { ok: false, status, error }.
  */
 export async function authorize(request, env, deps = {}) {
   const now = deps.now ?? Date.now();
   const accessOn = Boolean(env.ACCESS_AUD && env.ACCESS_TEAM_DOMAIN);
+  let email = null;
   if (accessOn) {
     const v = await verifyAccessJwt(request, env, deps.fetch || fetch, Math.floor(now / 1000));
     if (!v.ok) return { ok: false, status: 403, error: "Cloudflare Access login required" };
+    email = v.email || null;
   }
   if (env.APP_SECRET) {
     const ip = clientIp(request);
@@ -123,10 +125,10 @@ export async function authorize(request, env, deps = {}) {
     // refused but not counted, so reloading the login page can't lock a user out.
     if (!timingSafeEqual(provided, env.APP_SECRET)) { if (provided) recordFail(ip, now); return { ok: false, status: 401, error: "unauthorized" }; }
     FAILS.delete(ip);
-    return { ok: true };
+    return { ok: true, email };
   }
-  if (accessOn) return { ok: true };
-  if (String(env.ALLOW_OPEN) === "true") return { ok: true };
+  if (accessOn) return { ok: true, email };
+  if (String(env.ALLOW_OPEN) === "true") return { ok: true, email: null };
   return { ok: false, status: 503, error: "server not configured: set APP_SECRET (wrangler secret put APP_SECRET) or Cloudflare Access" };
 }
 
