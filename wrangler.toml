@@ -19,6 +19,6 @@ NBA_TREND_LOGS_URL = "https://raw.githubusercontent.com/thizzmasta510/nfl-prop-a
 
 # Cloudflare Access login (email code). Turned ON.
 ACCESS_TEAM_DOMAIN = "red-bonus-8506.cloudflareaccess.com"
-ACCESS_AUD = "a744cc3ed6552953bd24edb1f8f2ce02aad7b5d9058efc273798c91b58ec8b5c"
+ACCESS_AUD = "698a8c53ad2d753227ce9119415fcbff0be8227359a50e1e41598c0826c1a77a"
 
 # Secrets are set with: npx wrangler secret put APP_SECRET
