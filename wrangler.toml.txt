@@ -1,0 +1,24 @@
+name = "nfl-prop-model"
+main = "src/index.js"
+compatibility_date = "2024-09-01"
+
+# R2 bucket used as the app's database.
+[[r2_buckets]]
+binding = "PROP_DATA"
+bucket_name = "nfl-prop-data"
+
+# Tue 10:00 UTC and Fri 18:00 UTC: refresh all feeds. Daily 14:30 UTC: NBA only.
+[triggers]
+crons = ["0 10 * * 2", "0 18 * * 5", "30 14 * * *"]
+
+[vars]
+PLAYER_STATS_URL = "https://raw.githubusercontent.com/thizzmasta510/nfl-prop-app/main/player-stats.json"
+STATS_FEED_URL = "https://raw.githubusercontent.com/thizzmasta510/nfl-prop-app/main/weekly-stats.json"
+TREND_LOGS_URL = "https://raw.githubusercontent.com/thizzmasta510/nfl-prop-app/main/trend-logs.json"
+NBA_TREND_LOGS_URL = "https://raw.githubusercontent.com/thizzmasta510/nfl-prop-app/main/nba-trend-logs.json"
+
+# Cloudflare Access login (email code). Turned ON.
+ACCESS_TEAM_DOMAIN = "red-bonus-8506.cloudflareaccess.com"
+ACCESS_AUD = "698a8c53ad2d753227ce9119415fcbff0be8227359a50e1e41598c0826c1a77a"
+
+# Secrets are set with: npx wrangler secret put APP_SECRET

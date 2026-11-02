@@ -270,6 +270,26 @@ export function linesFromProps(props, stat, propTypeToStatKey) {
   return lines;
 }
 
+/**
+ * Lines from Kalshi's prop ladders (markets from parseKalshiMarket): for each player, the
+ * rung priced closest to 50/50 is Kalshi's version of "the line" (Over = strike - 0.5).
+ * Rungs with a spread over maxSpread are skipped (their mid is unreliable).
+ * -> { normName: { line, price, ticker, date, player } }
+ */
+export function linesFromKalshi(markets, { maxSpread = 0.15 } = {}) {
+  const best = {};
+  for (const m of markets || []) {
+    if (!m || !m.norm || !Number.isFinite(m.strike) || !(m.mid > 0 && m.mid < 1)) continue;
+    if (m.spread !== null && m.spread !== undefined && m.spread > maxSpread) continue;
+    const cur = best[m.norm];
+    const d = Math.abs(m.mid - 0.5);
+    if (!cur || d < Math.abs(cur.price - 0.5) - 1e-9) {
+      best[m.norm] = { line: m.strike - 0.5, price: Math.round(m.mid * 1000) / 1000, ticker: m.ticker, date: m.date || null, player: m.player };
+    }
+  }
+  return best;
+}
+
 // NBA lines entered in the NBA tab: [{ player, stat, line }] -> { normName: line }
 export function linesFromList(list, stat) {
   const lines = {};

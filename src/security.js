@@ -133,20 +133,24 @@ export async function authorize(request, env, deps = {}) {
 }
 
 // ---------- response headers ----------
-let SCRIPT_HASH = null;
+let SCRIPT_HASHES = null;
+/** SHA-256 hashes of every inline <script> in the page (the theme script in <head> and the app). */
 export async function scriptHashFor(html) {
-  if (SCRIPT_HASH) return SCRIPT_HASH;
-  const m = /<script>([\s\S]*?)<\/script>/.exec(html);
-  if (!m) return null;
-  const digest = await crypto.subtle.digest("SHA-256", enc.encode(m[1]));
-  SCRIPT_HASH = btoa(String.fromCharCode(...new Uint8Array(digest)));
-  return SCRIPT_HASH;
+  if (SCRIPT_HASHES) return SCRIPT_HASHES;
+  const out = [];
+  for (const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+    const digest = await crypto.subtle.digest("SHA-256", enc.encode(m[1]));
+    out.push(btoa(String.fromCharCode(...new Uint8Array(digest))));
+  }
+  SCRIPT_HASHES = out.length ? out : null;
+  return SCRIPT_HASHES;
 }
 
-export function htmlCsp(hash) {
+export function htmlCsp(hashes) {
+  const list = (Array.isArray(hashes) ? hashes : hashes ? [hashes] : []).map((h) => `'sha256-${h}'`);
   return [
     "default-src 'self'",
-    hash ? `script-src 'sha256-${hash}'` : "script-src 'self'",
+    list.length ? `script-src ${list.join(" ")}` : "script-src 'self'",
     "style-src 'self' 'unsafe-inline'", // inline style attributes; no scripts can run from styles
     "img-src 'self' data:",
     "connect-src 'self'",

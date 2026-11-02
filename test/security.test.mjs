@@ -1,6 +1,6 @@
 // node test/security.test.mjs : access gate, lockout, Cloudflare Access JWT checks, headers.
 import assert from "node:assert/strict";
-import { authorize, verifyAccessJwt, _resetLockouts } from "../src/security.js";
+import { authorize, verifyAccessJwt, _resetLockouts, scriptHashFor, htmlCsp } from "../src/security.js";
 import worker from "../src/index.js";
 
 const req = (headers = {}, url = "http://x/api/props") => new Request(url, { headers });
@@ -71,4 +71,13 @@ assert.ok(csp.includes(`'sha256-${digest}'`), "hash matches the served script");
 assert.ok(!/ on[a-z]+="/.test(html), "no inline event handlers (they would be blocked)");
 const api = await worker.fetch(req(), { PROP_DATA: bucket });
 assert.equal(api.headers.get("x-frame-options"), "DENY");
+// CSP allows exactly the page's inline scripts (the early theme script and the app), nothing else.
+{
+  const page = "<head><script>a()</script></head><body><script>b()</script></body>";
+  const hashes = await scriptHashFor(page);
+  const csp = htmlCsp(hashes);
+  assert.equal((csp.match(/'sha256-/g) || []).length, 2, csp);
+  assert.ok(!csp.includes("unsafe-inline'") || csp.indexOf("unsafe-inline") > csp.indexOf("style-src"), "scripts never allowed inline wholesale");
+  assert.equal(htmlCsp(null).includes("script-src 'self'"), true);
+}
 console.log("security tests passed");

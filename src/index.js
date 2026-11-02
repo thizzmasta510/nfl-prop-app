@@ -2,7 +2,7 @@ import { trackerDupeKey, gradeResult, autogradeEntries, picksSummary, closeFromC
 import { scoreProp, rankByTeam, calibration, matchPlayerStat,
          annotateCorrelation, betPerformance, breakEvenRate, propTypeToStatKey } from "./model.js";
 import { authorize, verifyAccessJwt, withSecurityHeaders, scriptHashFor, htmlCsp } from "./security.js";
-import { buildTrendGrid, linesFromProps, linesFromList, parseLinesText, MARKETS, SPORTS } from "./trends.js";
+import { buildTrendGrid, linesFromProps, linesFromList, linesFromKalshi, parseLinesText, MARKETS, SPORTS } from "./trends.js";
 import { teamContext, decorateNbaGrid } from "./nba_model.js";
 import { KALSHI_NBA_SERIES, parseKalshiMarket, eventDate, buildNbaBoard } from "./nba_board.js";
 import { injuryIndex } from "./nba_injuries.js";
@@ -591,6 +591,24 @@ const app = {
         slatePlayers = props.map((p) => p.player);
       }
       const dateParam = q.get("date");
+      // Kalshi lines fill in every player Kalshi lists for the next slate (the rung closest
+      // to 50/50). Lines you entered yourself take priority. Skipped for past dates/weeks,
+      // with kalshi=0, or when Kalshi can't be reached (the grid still works without them).
+      const userLines = { ...lines };
+      let kalshiLines = {}, kalshiMeta = null;
+      const series = sport === "nba" ? KALSHI_NBA_SERIES[stat] : KALSHI_NFL_SERIES[stat];
+      const pastView = (sport === "nba" && /^\d{4}-\d{2}-\d{2}$/.test(dateParam || "")) || (sport === "nfl" && q.get("week"));
+      if (series && q.get("kalshi") !== "0" && !pastView) {
+        try {
+          const km = sport === "nba" ? await kalshiNbaMarkets(env, stat, null, false) : await kalshiNflMarkets(env, stat, null, false);
+          kalshiLines = linesFromKalshi(km.markets);
+          kalshiMeta = { date: km.date, fetchedAt: km.fetchedAt, players: Object.keys(kalshiLines).length };
+        } catch (e) { kalshiMeta = { error: "Kalshi lines unavailable right now" }; }
+        for (const [norm, k] of Object.entries(kalshiLines)) {
+          if (!Number.isFinite(lines[norm])) lines[norm] = k.line;
+          slatePlayers.push(k.player);
+        }
+      }
       const cutoffs = markets[stat].cutoffs;
       const sortParam = Number(q.get("sort"));
       const grid = buildTrendGrid(doc.players, {
@@ -607,7 +625,12 @@ const app = {
       });
       // NBA: next opponent, pace / DRtg / defense-vs-position ranks and Model % (skipped for past dates).
       if (sport === "nba" && !grid.asOf.beforeDate) decorateNbaGrid(grid, doc, { stat, season, ctx: nbaContextFor(doc), injuries: await nbaInjuries(env) });
-      return json({ ...grid, source, generatedAt: doc.generatedAt || null, latestGameDate: doc.latestGameDate || null,
+      for (const r of grid.rows || []) {
+        if (r.line === null || r.line === undefined) continue;
+        if (Number.isFinite(userLines[r.norm])) r.lineSource = "you";
+        else if (kalshiLines[r.norm]) { r.lineSource = "kalshi"; r.linePrice = kalshiLines[r.norm].price; }
+      }
+      return json({ ...grid, source, kalshiLines: kalshiMeta, generatedAt: doc.generatedAt || null, latestGameDate: doc.latestGameDate || null,
         markets: Object.fromEntries(Object.entries(markets).map(([k, v]) => [k, v.label])) }, 200, origin);
     }
 
@@ -828,6 +851,10 @@ const HTML = `<!doctype html>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>NFL Player Prop Model</title>
+<script>
+  // Apply the saved theme before the page draws, so there's no white flash in dark mode.
+  try { const t = localStorage.getItem("theme"); if (t === "dark" || t === "light") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 <style>
   :root {
     --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#F8FAFC; --ink:#0F172A; --ink-2:#475569; --muted:#64748B;
@@ -838,8 +865,9 @@ const HTML = `<!doctype html>
     --navy: var(--accent); /* legacy name used by inline styles */
     color-scheme: light;
   }
+  /* Theme: follows the device unless the moon/sun button picked one (data-theme on <html>). */
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg:#0B0F17; --surface:#121826; --surface-2:#0F1522; --ink:#E5E9F0; --ink-2:#AAB4C3; --muted:#8792A3;
       --line:#222B3B; --line-2:#2E3A4F; --accent:#5B8CFF; --accent-ink:#0B0F17; --accent-soft:#18233A;
       --green:#4ADE80; --green-soft:#12301F; --red:#F87171; --red-soft:#3A1717; --amber:#FBBF24; --amber-soft:#33270C;
@@ -847,6 +875,14 @@ const HTML = `<!doctype html>
       --shadow:0 1px 2px rgba(0,0,0,.4); color-scheme: dark;
     }
   }
+  :root[data-theme="dark"] {
+      --bg:#0B0F17; --surface:#121826; --surface-2:#0F1522; --ink:#E5E9F0; --ink-2:#AAB4C3; --muted:#8792A3;
+      --line:#222B3B; --line-2:#2E3A4F; --accent:#5B8CFF; --accent-ink:#0B0F17; --accent-soft:#18233A;
+      --green:#4ADE80; --green-soft:#12301F; --red:#F87171; --red-soft:#3A1717; --amber:#FBBF24; --amber-soft:#33270C;
+      --heat0:#5A2323; --heat1:#3A2024; --heat2:#1A2130; --heat3:#1D3A2A; --heat4:#24553A; --bar:#5B8CFF; --bar-track:#2A3446;
+      --shadow:0 1px 2px rgba(0,0,0,.4); color-scheme: dark;
+  }
+  #themeBtn { font-size:15px; line-height:1; padding:6px 9px; }
   * { box-sizing:border-box; }
   html, body { margin:0; background:var(--bg); color:var(--ink); }
   body { font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing:antialiased; }
@@ -950,6 +986,8 @@ const HTML = `<!doctype html>
   details.opts > summary, details.how > summary { font-size:12.5px; color:var(--muted); font-weight:600; padding:4px 0; }
   details.opts > .tg-controls { margin-top:8px; }
   details.how p { max-width:900px; }
+  .src { font-size:10px; font-weight:700; padding:0 4px; border-radius:4px; background:var(--accent-soft); color:var(--accent); vertical-align:1px; }
+  .src.you { background:var(--amber-soft); color:var(--amber); }
   .lim { font-size:11.5px; color:var(--accent); font-weight:600; }
   .trackBtn { font-size:12px; padding:4px 12px; border-radius:8px; background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
   .trackBtn.done { background:var(--surface-2); color:var(--muted); border-color:var(--line); }
@@ -980,6 +1018,7 @@ const HTML = `<!doctype html>
     <div class="brand"><span class="mark">PM</span>Prop Model <small>NFL &middot; NBA</small></div>
     <div class="spacer"></div>
     <span id="whoami" class="hint" style="font-size:12.5px"></span>
+    <button id="themeBtn" title="Switch light / dark" aria-label="Switch light or dark mode"></button>
     <div class="menu" id="dataMenu">
       <button id="dataMenuBtn" aria-haspopup="true" aria-expanded="false">Data &#9662;</button>
       <div class="menu-panel" role="menu">
@@ -1122,7 +1161,8 @@ const HTML = `<!doctype html>
         <div><label>Sort by cutoff</label><input id="tgSort" placeholder="e.g. 5" style="width:90px"></div>
         <div><label class="chk"><input type="checkbox" id="tgSortGrade"> Sort by tendency grade</label></div>
         <div><label>Rows</label><input id="tgLimit" type="number" value="25" style="width:60px"></div>
-        <div><label class="chk"><input type="checkbox" id="tgSlate"> Only players in my props</label></div>
+        <div><label class="chk"><input type="checkbox" id="tgSlate"> Only players with a line</label></div>
+        <div><label class="chk" title="Fill the Line column from Kalshi (the rung priced closest to 50/50). Lines you enter yourself win."><input type="checkbox" id="tgKalshi" checked> Kalshi lines</label></div>
       </div>
     </details>
     <div id="tgWrap" class="tablewrap"></div>
@@ -1148,9 +1188,10 @@ const HTML = `<!doctype html>
         <div><label>Sort by cutoff</label><input id="nbSort" placeholder="e.g. 20" style="width:90px"></div>
         <div><label class="chk"><input type="checkbox" id="nbSortGrade"> Sort by tendency grade</label></div>
         <div><label>Rows</label><input id="nbLimit" type="number" value="25" style="width:60px"></div>
-        <div><label class="chk"><input type="checkbox" id="nbSlate"> Only players in my lines</label></div>
+        <div><label class="chk"><input type="checkbox" id="nbSlate"> Only players with a line</label></div>
+        <div><label class="chk" title="Fill the Line column from Kalshi (the rung priced closest to 50/50). Lines you enter yourself win."><input type="checkbox" id="nbKalshi" checked> Kalshi lines</label></div>
       </div>
-      <p class="hint" style="margin-top:10px">My NBA lines (fills the Line column and the tendency grade). One per line: <code>Player, stat, line</code>, e.g. <code>Jalen Brunson, points, 26.5</code>. Saving replaces the list.</p>
+      <p class="hint" style="margin-top:10px">My NBA lines (optional: Kalshi lines fill in automatically; a line typed here replaces Kalshi's for that player). One per line: <code>Player, stat, line</code>, e.g. <code>Jalen Brunson, points, 26.5</code>. Saving replaces the list.</p>
       <textarea id="nbLines" rows="5" style="width:100%; font-family:monospace; font-size:12px"></textarea>
       <button id="nbSaveLines" style="margin-top:6px">Save lines</button> <span id="nbLinesOut" class="hint"></span>
     </details>
@@ -1409,6 +1450,7 @@ async function loadTrends() {
   if (document.getElementById("tgSortGrade").checked) q.set("sort", "grade");
   q.set("limit", document.getElementById("tgLimit").value || 25);
   if (document.getElementById("tgSlate").checked) q.set("slate", "1");
+  if (!document.getElementById("tgKalshi").checked) q.set("kalshi", "0");
   wrap.innerHTML = "<p class='hint'>Loading...</p>";
   const res = await fetch(API + "/api/trends?" + q.toString(), { headers: authHeaders() });
   const data = await res.json().catch(() => ({}));
@@ -1429,10 +1471,12 @@ function renderTrendGrid(g) {
     h += "<tr><td><b>" + esc(r.player) + "</b> <span class='hint'>" + esc(r.team || "") + "</span>" + injBadge(r.injury) +
       (r.teammatesOut && r.teammatesOut.length ? "<span class='tmout'>Teammates out: " + r.teammatesOut.map(esc).join(", ") + "</span>" : "") +
       "</td><td>" + esc(r.position || "") + "</td>";
-    h += "<td>" + (r.line === null ? "-" : esc(r.line)) + "</td>";
+    h += "<td>" + (r.line === null ? "-" : esc(r.line) + (r.lineSource === "kalshi"
+        ? " <span class='src' title='Kalshi line: the rung priced closest to 50/50 (" + Math.round(r.linePrice * 100) + "c for the Over)'>K</span>"
+        : r.lineSource === "you" ? " <span class='src you' title='Your line'>you</span>" : "")) + "</td>";
     h += r.grade
       ? "<td title='" + esc(r.grade.basis + " (" + r.grade.percentile + "th percentile of graded lines). " + (g.gradeNote || "")) + "'><span class='grade g-" + esc(r.grade.letter.charAt(0)) + "'>" + esc(r.grade.letter) + "</span> <span class='hint'>" + (r.grade.direction === "above" ? "&#8593; above" : "&#8595; below") + "</span></td>"
-      : "<td class='hint'>enter a line</td>";
+      : "<td class='hint'>" + (r.line === null ? "no line" : "-") + "</td>";
     g.cutoffs.forEach(c => {
       const v = r.hits[c], b = r.bucket ? r.bucket[c] : null;
       h += "<td class='cell c" + (b === null || b === undefined ? 2 : b) + "'>" + Math.round(v * 100) + "%<div class='bar'><i style='width:" + Math.round(v * 100) + "%'></i></div></td>";
@@ -1452,7 +1496,7 @@ function renderTrendGrid(g) {
   });
   h += "</table><details class='how' style='margin:10px 12px'><summary>About this table</summary><p class='hint'>" + esc(g.note) + " Data: " + esc(g.source) + (g.generatedAt ? ", generated " + esc(String(g.generatedAt).slice(0, 16).replace("T", " ")) + " UTC" : "") +
     (g.latestGameDate ? ". Latest game " + esc(g.latestGameDate) : "") +
-    ". Lines come from " + (g.sport === "nba" ? "your NBA lines" : "props you have entered") + ". Sorted by " + esc(g.sortBy) + "+." +
+    ". Lines: Kalshi (marked K, the rung closest to 50/50" + (g.kalshiLines && g.kalshiLines.date ? ", games on " + esc(g.kalshiLines.date) : "") + (g.kalshiLines && g.kalshiLines.error ? "; " + esc(g.kalshiLines.error) : "") + ") unless you entered your own (" + (g.sport === "nba" ? "your NBA lines" : "props on Add Prop") + "). Sorted by " + esc(g.sortBy) + "+." +
     (g.windowSeasonFallback ? " No games yet this season, so the window uses last season." : "") +
     (g.sport === "nba" ? " " + esc(injMeta(g.injuries)) : "") +
     " <b>Tendency grades</b> describe how one-sided each player's record against the entered line has been, ranked within this market. They are not predictions or picks; in testing, recent records against the line did not predict the next result.</p></details>";
@@ -1627,6 +1671,7 @@ async function loadNbaTrends() {
   const min = document.getElementById("nbMin").value; if (min) q.set("min", min);
   const sort = document.getElementById("nbSort").value; if (sort) q.set("sort", sort);
   if (document.getElementById("nbSortGrade").checked) q.set("sort", "grade");
+  if (!document.getElementById("nbKalshi").checked) q.set("kalshi", "0");
   q.set("limit", document.getElementById("nbLimit").value || 25);
   if (document.getElementById("nbSlate").checked) q.set("slate", "1");
   wrap.innerHTML = "<p class='hint'>Loading...</p>";
@@ -1651,6 +1696,21 @@ document.getElementById("nbSaveLines").addEventListener("click", async () => {
     : (out.error || "Save failed");
   if (res.ok) loadNbaTrends();
 });
+
+// ---- Light / dark: the button flips between the two and remembers the choice on this device ----
+(function () {
+  const btn = document.getElementById("themeBtn"), root = document.documentElement;
+  const isDark = () => root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  const paint = () => { btn.textContent = isDark() ? "\u2600\uFE0F" : "\uD83C\uDF19"; btn.title = isDark() ? "Switch to light mode" : "Switch to dark mode"; };
+  btn.addEventListener("click", () => {
+    const next = isDark() ? "light" : "dark";
+    root.dataset.theme = next;
+    try { localStorage.setItem("theme", next); } catch (e) { /* not remembered */ }
+    paint();
+  });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", paint);
+  paint();
+})();
 
 // ---- Tracking: Track buttons on the Boards and Scored Props, and the My Picks tab ----
 const NFL_PT = { receptions: "Receptions", receiving_yards: "Receiving Yards", rushing_yards: "Rushing Yards", carries: "Rush Attempts", passing_yards: "Passing Yards" };

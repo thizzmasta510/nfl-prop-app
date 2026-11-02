@@ -1,6 +1,7 @@
 // node test/trends.test.mjs  -> exits non-zero on failure
 import assert from "node:assert/strict";
-import { buildTrendGrid, gameLogs, linesFromProps } from "../src/trends.js";
+import { buildTrendGrid, gameLogs, linesFromProps, linesFromKalshi } from "../src/trends.js";
+import { parseKalshiMarket } from "../src/nba_board.js";
 import { propTypeToStatKey } from "../src/model.js";
 
 const mk = (name, season, week, rec, pos = "WR", team = "AAA") => ({ name, team, season, week, position: pos, stats: { receptions: rec } });
@@ -87,4 +88,17 @@ assert.deepEqual(gd.rows[0].values, [6, 5]);
   assert.ok(g11.gradeNote.includes("not a probability, a prediction or a pick"));
 }
 
+// Kalshi lines: the rung priced closest to 50/50 per player; wide-spread rungs skipped.
+{
+  const mk = (title, strike, bid, ask) => parseKalshiMarket({ ticker: `KXNBAPTS-26OCT31OKCHOU-X-${strike}`, event_ticker: "KXNBAPTS-26OCT31OKCHOU", status: "active", title, yes_bid_dollars: bid, yes_ask_dollars: ask }, "points");
+  const L = linesFromKalshi([
+    mk("Jared McCain: 10+", 10, "0.55", "0.80"),   // wide (25c): skipped
+    mk("Jared McCain: 15+", 15, "0.44", "0.48"),   // mid 0.46: closest to 50/50
+    mk("Jared McCain: 20+", 20, "0.26", "0.28"),
+    mk("Jaime Jaquez Jr.: 15+", 15, "0.60", "0.64"),
+  ]);
+  assert.equal(L["jared mccain"].line, 14.5); assert.equal(L["jared mccain"].price, 0.46);
+  assert.equal(L["jaime jaquez"].line, 14.5, "suffix dropped so it matches the game logs");
+  assert.deepEqual(linesFromKalshi([]), {});
+}
 console.log("trends tests passed");

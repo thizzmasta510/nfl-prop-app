@@ -18,7 +18,9 @@ const bucket = {
 const rows = [1, 2, 3].map((w) => ({ name: "A B", team: "T", week: w, season: 2026, position: "WR", stats: { receptions: 5 } }));
 await bucket.put("trend-logs.json", JSON.stringify({ season: 2026, players: rows }));
 const env = { PROP_DATA: bucket, ALLOW_OPEN: "true" };
-const call = () => worker.fetch(new Request("http://x/api/trends?stat=receptions&games=3"), env).then((r) => r.json());
+// kalshi=0: this test is about the trend file cache; the Kalshi line fill makes its own
+// (network + cache) reads, which would otherwise depend on whether Kalshi is reachable.
+const call = () => worker.fetch(new Request("http://x/api/trends?stat=receptions&games=3&kalshi=0"), env).then((r) => r.json());
 const r1 = await call(); assert.equal(r1.rows.length, 1);
 const before = bodyReads; const r2 = await call();
 assert.equal(bodyReads - before, 0, "trend body not re-read when etag unchanged (props.json absent here)");
