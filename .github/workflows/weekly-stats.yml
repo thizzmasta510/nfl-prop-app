@@ -116,6 +116,20 @@ jobs:
             fi
           done
 
+      # Straight into the app's storage (needed once the repo is private; skipped without the secrets).
+      - name: Upload to Cloudflare R2
+        if: always()
+        continue-on-error: true
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+        run: |
+          for f in player-stats.json weekly-stats.json trend-logs.json; do
+            if [ -f "$f" ]; then bash github-action/upload_r2.sh "$f" "$f"; fi
+          done
+
       - name: Commit and push results
         if: always()
         run: |

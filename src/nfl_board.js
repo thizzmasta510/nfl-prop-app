@@ -11,8 +11,11 @@
 
 import { scoreProp, normalizeName } from "./model.js";
 import { gameLogs } from "./trends.js";
-import { parseKalshiMarket, boardSort, suggestedLimit } from "./nba_board.js";
+import { parseKalshiMarket, boardSort, suggestedLimit, evPerDollar, blendWithPrice, EV_RULES } from "./nba_board.js";
 import { impliedTotal } from "./game_script.js";
+
+import { nflOppIndex, nflOpportunityProjection, nflProbAtLeast, nflOppSummary, NFL_OPP_STATS } from "./nfl_opportunity.js";
+import { nflHitChance, nflRecentIndex } from "./hit_chance.js";
 
 export const KALSHI_NFL_SERIES = {
   receptions: "KXNFLREC", receiving_yards: "KXNFLRECYDS", rushing_yards: "KXNFLRSHYDS",
@@ -49,16 +52,19 @@ export function buildNflBoard(opts) {
   const nowMs = opts.nowMs ?? Date.now();
   const [lo, hi] = opts.band || [0.66, 0.75];
   const maxSpread = opts.maxSpread ?? 0.14, disagree = opts.disagree ?? 0.10, errorGap = opts.errorGap ?? 0.15;
-  const sortBy = ["market", "edge"].includes(opts.sortBy) ? opts.sortBy : "model";
+  const sortBy = ["market", "edge", "ev"].includes(opts.sortBy) ? opts.sortBy : "model";
+  const rankBy = ["hit", "proj"].includes(opts.rankBy) ? opts.rankBy : "model";
   // Plus-money / coin-flip bands: keep a side only when the model is minGap or more ABOVE the price.
   const minGap = Number.isFinite(opts.minGap) ? opts.minGap : null;
+  const minEv = Number.isFinite(opts.minEv) ? opts.minEv : null;   // EV list: keep a side only at this EV or better
+  const evWeight = Number.isFinite(opts.evWeight) ? opts.evWeight : EV_RULES.weight;
   const season = Number(trend.season) || new Date().getUTCFullYear();
   const schedule = Array.isArray(trend.schedule) ? trend.schedule : [];
   const priors = trend.priorSeason || {};
   const defense = {};
   for (const d of weekly.defense || []) defense[d.team] = d;
   const excluded = { unknownPlayer: 0, noCurrentSeason: 0, wrongGame: 0, started: 0, notOnSchedule: 0, wideSpread: 0,
-    outOfBand: 0, modelDisagrees: 0, belowMinGap: 0, likelyDataError: 0, duplicateRung: 0 };
+    outOfBand: 0, modelDisagrees: 0, belowMinGap: 0, belowMinEv: 0, likelyDataError: 0, duplicateRung: 0 };
   const dataErrors = [], unknown = new Set();
   const logsByStat = {};
   // Game script: this week's spread/total (schedule) against the average lines
@@ -80,6 +86,8 @@ export function buildNflBoard(opts) {
     return { avgSpread, avgImplied };
   };
   let linesMissing = 0;
+  let oppIdx = null;   // opportunity projection index, built on first use
+  let recentIdx = null; // last games across seasons, for the hit chance
   const curWeek = Math.max(0, ...(trend.players || []).filter((r) => Number(r.season) === season).map((r) => Number(r.week)).filter(Number.isFinite));
 
   let rows = [];
@@ -121,23 +129,46 @@ export function buildNflBoard(opts) {
       teamSpread, gameTotal, logAvgSpread: ll.avgSpread, logAvgImplied: ll.avgImplied });
     const pOver = s.pOver;
     if (!Number.isFinite(pOver)) continue;
+    // Opportunity projection (volume x regressed efficiency), with the same game-script
+    // adjustment applied to volume. Shown next to Model; not used to pick or filter.
+    let oppProj = null, oi = null;
+    if (NFL_OPP_STATS.includes(mk.stat)) {
+      oppIdx ||= nflOppIndex(trend, normalizeName);
+      oi = oppIdx.get(p.norm);
+      oppProj = oi && oi.games.length ? nflOpportunityProjection(oi.games, mk.stat, oi.prev, { volumeAdj: Number(s.gameScriptAdj) || 0 }) : null;
+    }
+    const oppOver = oppProj ? nflProbAtLeast(mk.strike, oppProj) : null;
+    // rankBy "proj": the opportunity projection decides where it exists; the current model stays as modelCurrent.
+    // Hit chance: Proj after a second pass over his last 10 games and last-game volume
+    // (passing yards, rush attempts and rushing yards only; src/hit_chance.js).
+    let hc = null;
+    if (oppOver !== null && oi) { recentIdx ||= nflRecentIndex(trend, normalizeName); hc = nflHitChance({ pOver: oppOver, strike: mk.strike, stat: mk.stat, games: oi.games, recent: recentIdx.get(p.norm) }); }
+    const hitOver = hc ? hc.pOver : null;
+    const useHit = rankBy === "hit" && hitOver !== null;
+    const useProj = !useHit && rankBy !== "model" && oppOver !== null;
     const sides = [
-      { side: "Over", mid: mk.mid, buy: mk.ask, model: pOver, hits: log.filter((v) => v >= mk.strike).length },
-      { side: "Under", mid: 1 - mk.mid, buy: mk.bid !== null ? 1 - mk.bid : null, model: 1 - pOver, hits: log.filter((v) => v < mk.strike).length },
+      { side: "Over", mid: mk.mid, buy: mk.ask, cur: pOver, proj: oppOver, hit: hitOver, hits: log.filter((v) => v >= mk.strike).length },
+      { side: "Under", mid: 1 - mk.mid, buy: mk.bid !== null ? 1 - mk.bid : null, cur: 1 - pOver, proj: oppOver === null ? null : 1 - oppOver, hit: hitOver === null ? null : 1 - hitOver, hits: log.filter((v) => v < mk.strike).length },
     ];
+    for (const sd of sides) sd.model = useHit ? sd.hit : useProj ? sd.proj : sd.cur;
     for (const sd of sides) {
       const price = sd.buy !== null && sd.buy > 0 && sd.buy < 1 ? sd.buy : sd.mid;
       if (price < lo || price > hi) { excluded.outOfBand++; continue; }
       if (sd.model < price - disagree) { excluded.modelDisagrees++; continue; }
       if (minGap !== null && sd.model < price + minGap) { excluded.belowMinGap++; continue; }
+      const fair = blendWithPrice(sd.model, sd.mid, evWeight), ev = evPerDollar(fair, price);
+      if (minEv !== null && !(ev >= minEv)) { excluded.belowMinEv++; continue; }
       const row = {
         player: p.name, norm: p.norm, team: p.team, position: p.position, stat: mk.stat, unit: UNIT[mk.stat], ticker: mk.ticker,
         side: sd.side, line: mk.strike - 0.5, rung: `${mk.strike}+`,
         market: price, mid: sd.mid, buy: sd.buy, spread: mk.spread, limit: suggestedLimit(sd.mid, sd.buy), model: sd.model, gap: sd.model - price,
+        modelCurrent: sd.cur, modelProj: sd.proj, hitChance: sd.hit, ev, evRaw: evPerDollar(sd.model, price), fair, rankedBy: useHit ? "hit" : useProj ? "proj" : "model",
+        hit: hc ? { games: hc.games, share: sd.side === "Over" ? hc.share : 1 - hc.share, lastVol: hc.lastVol } : null,
         caution: sd.model - price > 0.10 ? "model far above market: more likely model error than value" : null,
         projection: s.finalProjection, log, logRecord: `${sd.hits} of ${log.length}`,
         prior: prior ?? null, opp, oppDefRank: d ? d.defRank : null,
         teamSpread: teamSpread ?? null, gameTotal: gameTotal ?? null, gameScriptAdj: s.gameScriptAdj,
+        opportunity: nflOppSummary(oppProj, { model: sd.proj }),
         week: game && Number.isFinite(Number(game.week)) ? Number(game.week) : curWeek + 1,
         game: game ? { opp, home: game.home === p.team, kickoff: game.kickoff, date: game.date } : { date: mk.date },
       };
@@ -157,7 +188,7 @@ export function buildNflBoard(opts) {
   }
   rows.sort(boardSort(sortBy));
   return {
-    band: [lo, hi], sortBy, minGap, count: rows.length, excluded, unknownPlayers: [...unknown].slice(0, 25),
+    band: [lo, hi], sortBy, rankBy, minGap, minEv, evWeight, count: rows.length, excluded, unknownPlayers: [...unknown].slice(0, 25),
     dataErrors: dataErrors.sort((a, b) => (b.model - b.market) - (a.model - a.market)).slice(0, 15),
     scheduleIncluded: schedule.length > 0, defenseIncluded: Object.keys(defense).length > 0,
     linesIncluded: schedule.some((g) => Number.isFinite(g.spreadHome)), linesMissing,

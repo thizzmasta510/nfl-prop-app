@@ -4,7 +4,11 @@ import { scoreProp, rankByTeam, calibration, matchPlayerStat,
 import { authorize, verifyAccessJwt, withSecurityHeaders, scriptHashFor, htmlCsp } from "./security.js";
 import { buildTrendGrid, linesFromProps, linesFromList, linesFromKalshi, parseLinesText, MARKETS, SPORTS } from "./trends.js";
 import { teamContext, decorateNbaGrid } from "./nba_model.js";
-import { KALSHI_NBA_SERIES, parseKalshiMarket, eventDate, buildNbaBoard } from "./nba_board.js";
+import { decorateOpportunity } from "./nba_opportunity.js";
+import { decorateNflOpportunity } from "./nfl_opportunity.js";
+import { normalizeName as normName } from "./model.js";
+import { SNAPSHOT_SERIES, snapshotRungs, scoreRungs, summarizeReports, fitPriceWeight, nflWeekOf } from "./model_report.js";
+import { KALSHI_NBA_SERIES, parseKalshiMarket, eventDate, buildNbaBoard, EV_RULES } from "./nba_board.js";
 import { injuryIndex } from "./nba_injuries.js";
 import { KALSHI_NFL_SERIES, buildNflBoard } from "./nfl_board.js";
 import { userPrefix, isOwner, scopedBucket } from "./users.js";
@@ -22,6 +26,7 @@ const MAX_NBA_LINES = 300;
 const KALSHI_CACHE_SECONDS = 300;   // NBA Board: re-pull Kalshi prices at most every 5 minutes per market
 const KALSHI_BASES = ["https://api.elections.kalshi.com/trade-api/v2", "https://external-api.kalshi.com/trade-api/v2"];
 const NBA_DAILY_CRON = "30 14 * * *"; // 10:30 AM ET, after the NBA GitHub Action (14:10 UTC)
+const SNAPSHOT_CRON = "0 16 * * *";   // 11 AM ET (noon in summer): save Kalshi prop prices for the Model Report
 const MAX_BODY_BYTES = 20_000; // generous for one form submission, blocks payload abuse
 const MAX_ARRAY_LEN = 2000; // hard ceiling on stored records, blocks storage-fill abuse
 const MAX_STRING_LEN = 200;
@@ -243,6 +248,81 @@ const kalshiNbaMarkets = (env, stat, date, force) =>
 const kalshiNflMarkets = (env, stat, date, force) =>
   kalshiMarkets(env, { series: KALSHI_NFL_SERIES[stat], stat, key: `kalshi-nfl-${stat}.json`, date, force, minEvents: 4 });
 
+// ---- Kalshi snapshots for the Model Report ----
+// Saves Kalshi's open NBA and NFL player-prop markets as returned (no parsing here, to
+// keep the cron's CPU tiny): snapshots/<ET date>/<HHMM UTC>/<series>-<page>.json.
+// One request per series (plus pages), about 10-20 subrequests in all.
+async function snapshotKalshi(env) {
+  const day = easternDate(), hhmm = new Date().toISOString().slice(11, 16).replace(":", "");
+  const saved = {}, failed = [];
+  for (const [sport, series] of Object.entries(SNAPSHOT_SERIES)) {
+    for (const [stat, s] of Object.entries(series)) {
+      let cursor = "", pages = 0;
+      try {
+        for (; pages < 3; pages++) {
+          const q = new URLSearchParams({ series_ticker: s, status: "open", limit: "1000" });
+          if (cursor) q.set("cursor", cursor);
+          const bases = env.KALSHI_API_BASE ? [String(env.KALSHI_API_BASE).trim()] : KALSHI_BASES;
+          const res = await fetch(bases[0] + "/markets?" + q.toString(), { headers: { accept: "application/json" } });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const text = await res.text();
+          await env.PROP_DATA.put(`snapshots/${day}/${hhmm}/${s}-${pages}.json`, text, { httpMetadata: { contentType: "application/json" } });
+          const m = text.slice(-400).match(/"cursor"\s*:\s*"([^"]*)"/) || text.slice(0, 400).match(/"cursor"\s*:\s*"([^"]*)"/);
+          cursor = m ? m[1] : "";
+          if (!cursor) { pages++; break; }
+        }
+        saved[s] = pages;
+      } catch (e) { failed.push(`${s}: ${e && e.message ? e.message : e}`); }
+    }
+  }
+  return { day, time: hhmm, saved, failed };
+}
+
+// Daily history of the NBA points scoring correction (reviewer round 5: keep the time series
+// so a jump, or a gap between the live and backtest factor, can be told from a regime change).
+// One entry per "as of" date, written the first time a Board or Matrix computes it.
+const CORRECTION_LOG_KEY = "corrections/nba-points.json";
+// How much the +EV list trusts the estimate next to the Kalshi price, per sport; refit when the Model Report is opened.
+const EV_WEIGHT_KEY = "corrections/ev-weight.json";
+async function evWeightFor(env, sport) {
+  const w = await readJson(env.PROP_DATA, EV_WEIGHT_KEY, null);
+  const v = w && w[sport] && Number(w[sport].weight);
+  return Number.isFinite(v) && v >= 0 && v <= 0.6 ? v : EV_RULES.weight;
+}
+async function recordCorrection(env, c) {
+  if (!c || !c.asOf || !Number.isFinite(c.factor)) return;
+  try {
+    const log = await readJson(env.PROP_DATA, CORRECTION_LOG_KEY, []);
+    if (Array.isArray(log) && log.some((e) => e.asOf === c.asOf)) return;
+    const next = (Array.isArray(log) ? log : []).concat([{ asOf: c.asOf, factor: Math.round(c.factor * 10000) / 10000, games: c.games,
+      actual: Math.round(c.actual), projected: Math.round(c.projected), at: new Date().toISOString() }]).slice(-400);
+    await writeJson(env.PROP_DATA, CORRECTION_LOG_KEY, next);
+  } catch (e) { /* history is best-effort */ }
+}
+
+// Dates that have snapshots: [{ date, times: ["1600", ...] }], newest first.
+async function snapshotDates(env, limit = 60) {
+  const out = new Map(); let cursor;
+  for (let i = 0; i < 10; i++) {
+    const l = await env.PROP_DATA.list({ prefix: "snapshots/", delimiter: "/", cursor });
+    for (const p of l.delimitedPrefixes || []) { const d = p.split("/")[1]; if (/^\d{4}-\d{2}-\d{2}$/.test(d)) out.set(d, []); }
+    if (!l.truncated) break; cursor = l.cursor;
+  }
+  return [...out.keys()].sort().reverse().slice(0, limit);
+}
+async function snapshotTexts(env, date, series) {
+  const l = await env.PROP_DATA.list({ prefix: `snapshots/${date}/`, delimiter: "/" });
+  const times = (l.delimitedPrefixes || []).map((p) => p.split("/")[2]).sort();
+  if (!times.length) return null;
+  const t = times[0];   // the morning snapshot
+  const texts = [];
+  for (let pg = 0; pg < 3; pg++) {
+    const o = await env.PROP_DATA.get(`snapshots/${date}/${t}/${series}-${pg}.json`);
+    if (!o) break; texts.push(await o.text());
+  }
+  return { time: t, texts };
+}
+
 function checkAuth(request, env) {
   // If no secret is configured, the app is open (fine for pure local/dev use,
   // NOT recommended once deployed live). Set one with `wrangler secret put APP_SECRET`.
@@ -314,7 +394,10 @@ const TRACKER_FIELDS = ["id","week","player","team","propType","lean","projectio
   // v16: execution. pickMid / pickSpread = the side's mid and spread when tracked (splits CLV
   // into execution and market movement); limitPrice = the suggested limit; orderType
   // taker|maker sets the fee (maker = a resting limit order, no fee on most markets).
-  "pickMid","pickSpread","limitPrice","orderType"];
+  "pickMid","pickSpread","limitPrice","orderType",
+  // v17: both estimates at the time of tracking and which one ranked the Board, so My Picks
+  // can compare the projection with the old model on your own picks.
+  "modelProb","projProb","hitProb","rankedBy"];
 
 const app = {
   async fetch(request, env) {
@@ -624,7 +707,14 @@ const app = {
         players: q.get("slate") === "1" ? slatePlayers : null,
       });
       // NBA: next opponent, pace / DRtg / defense-vs-position ranks and Model % (skipped for past dates).
-      if (sport === "nba" && !grid.asOf.beforeDate) decorateNbaGrid(grid, doc, { stat, season, ctx: nbaContextFor(doc), injuries: await nbaInjuries(env) });
+      if (sport === "nba" && !grid.asOf.beforeDate) {
+        const nctx = nbaContextFor(doc);
+        decorateNbaGrid(grid, doc, { stat, season, ctx: nctx, injuries: await nbaInjuries(env) });
+        decorateOpportunity(grid, doc, { stat, ctx: nctx });   // points and threes: Proj / Range / volume note
+        if (grid.opportunity) await recordCorrection(env, grid.opportunity.correction);
+      }
+      // NFL: opportunity projection for receptions, receiving / rushing / passing yards and carries (current week).
+      if (sport === "nfl" && !q.get("week")) decorateNflOpportunity(grid, doc, { stat, normalize: normName });
       for (const r of grid.rows || []) {
         if (r.line === null || r.line === undefined) continue;
         if (Number.isFinite(userLines[r.norm])) r.lineSource = "you";
@@ -645,6 +735,9 @@ const app = {
       const bandM = String(q.get("band") || "66-75").match(/^(\d{2})-(\d{2})$/);
       let lo = bandM ? Number(bandM[1]) / 100 : 0.66, hi = bandM ? Number(bandM[2]) / 100 : 0.75;
       if (!(lo >= 0.15 && hi <= 0.97 && lo < hi)) { lo = 0.66; hi = 0.75; }
+      // band=ev: the EV list (any side priced 30-65% whose estimate beats the price by 3%+ after the fee)
+      const evList = q.get("band") === "ev";
+      if (evList) [lo, hi] = EV_RULES.band;
       const date = /^\d{4}-\d{2}-\d{2}$/.test(q.get("date") || "") ? q.get("date") : null;
       const limitN = Math.min(100, Math.max(1, parseInt(q.get("limit"), 10) || 25));
       const doc = await readJsonCached(env.PROP_DATA, NBA_TREND_LOGS_KEY, null);
@@ -657,11 +750,13 @@ const app = {
       const season = Number(doc.season) || Number(String(doc.season || "").split("-")[0]) || new Date().getUTCFullYear();
       // Coin-flip and plus-money bands (low edge under 55%): keep only sides where the model is 5+
       // points above the price, and set aside 15+ point gaps as likely data errors.
-      const coinFlip = lo < 0.55;
+      const coinFlip = lo < 0.55 && !evList;
       const board = buildNbaBoard({ markets: km.markets, doc, ctx: nbaContextFor(doc), season, band: [lo, hi], limit: limitN,
-        minGap: coinFlip ? 0.05 : undefined, errorGap: coinFlip ? 0.15 : undefined,
-        injuries: await nbaInjuries(env), sortBy: ["model", "edge"].includes(q.get("sort")) ? q.get("sort") : "market",
-        onePerPlayer: q.get("allRungs") !== "1", dnpRule: String(env.KALSHI_DNP_RULE || "no").trim() === "void" ? "void" : "no" });
+        minGap: coinFlip ? 0.05 : undefined, errorGap: coinFlip ? 0.15 : evList ? EV_RULES.errorGap : undefined, minEv: evList ? EV_RULES.minEv : undefined, evWeight: await evWeightFor(env, "nba"),
+        injuries: await nbaInjuries(env), sortBy: evList ? "ev" : ["model", "edge"].includes(q.get("sort")) ? q.get("sort") : "market",
+        onePerPlayer: q.get("allRungs") !== "1", dnpRule: String(env.KALSHI_DNP_RULE || "no").trim() === "void" ? "void" : "no",
+        rankBy: ["model", "proj"].includes(q.get("rank")) ? q.get("rank") : "hit" });
+      await recordCorrection(env, board.scoringCorrection);
       return json({ ...board, stat, date: km.date, availableDates: km.availableDates, games: km.games, marketsSeen: km.markets.length,
         pricesFetchedAt: km.fetchedAt, pricesCached: km.cached, logsGeneratedAt: doc.generatedAt || null,
         scheduleIncluded: Array.isArray(doc.upcoming) && doc.upcoming.length > 0, source: "Kalshi public market data" }, 200, origin);
@@ -677,6 +772,9 @@ const app = {
       const bandM = String(q.get("band") || "66-75").match(/^(\d{2})-(\d{2})$/);
       let lo = bandM ? Number(bandM[1]) / 100 : 0.66, hi = bandM ? Number(bandM[2]) / 100 : 0.75;
       if (!(lo >= 0.15 && hi <= 0.97 && lo < hi)) { lo = 0.66; hi = 0.75; }
+      // band=ev: the EV list (any side priced 30-65% whose estimate beats the price by 3%+ after the fee)
+      const evList = q.get("band") === "ev";
+      if (evList) [lo, hi] = EV_RULES.band;
       const date = /^\d{4}-\d{2}-\d{2}$/.test(q.get("date") || "") ? q.get("date") : null;
       const limitN = Math.min(100, Math.max(1, parseInt(q.get("limit"), 10) || 25));
       const trend = await readJsonCached(env.PROP_DATA, TREND_LOGS_KEY, null);
@@ -687,8 +785,10 @@ const app = {
       let km;
       try { km = await kalshiNflMarkets(env, stat, date, q.get("refresh") === "1"); }
       catch (err) { return json({ error: "could not reach Kalshi", detail: String(err && err.message || err).slice(0, 120) }, 502, origin); }
-      const board = buildNflBoard({ markets: km.markets, trend, weekly, band: [lo, hi], limit: limitN, minGap: lo < 0.55 ? 0.05 : undefined,
-        sortBy: ["market", "edge"].includes(q.get("sort")) ? q.get("sort") : "model", onePerPlayer: q.get("allRungs") !== "1" });
+      const board = buildNflBoard({ markets: km.markets, trend, weekly, band: [lo, hi], limit: limitN, minGap: lo < 0.55 && !evList ? 0.05 : undefined,
+        minEv: evList ? EV_RULES.minEv : undefined, errorGap: evList ? EV_RULES.errorGap : undefined, evWeight: await evWeightFor(env, "nfl"),
+        sortBy: evList ? "ev" : ["market", "edge"].includes(q.get("sort")) ? q.get("sort") : "model", onePerPlayer: q.get("allRungs") !== "1",
+        rankBy: ["model", "proj"].includes(q.get("rank")) ? q.get("rank") : "hit" });
       return json({ ...board, stat, date: km.date, availableDates: km.availableDates, games: km.games, marketsSeen: km.markets.length,
         pricesFetchedAt: km.fetchedAt, pricesCached: km.cached, logsGeneratedAt: trend.generatedAt || null, source: "Kalshi public market data" }, 200, origin);
     }
@@ -707,6 +807,77 @@ const app = {
       if (ok.length > MAX_NBA_LINES) return json({ error: `too many lines (max ${MAX_NBA_LINES})` }, 400, origin);
       await writeJson(env.PROP_DATA, NBA_LINES_KEY, ok);
       return json({ saved: ok.length, rejected: bad.slice(0, 50) }, 200, origin);
+    }
+
+    // ---- Model Report: every saved Kalshi rung of a past slate, scored by Model and Proj ----
+    // GET /api/model-report/dates             -> dates with saved prices
+    // GET /api/model-report?date=&sport=&stat= -> that slate's rungs (computed once, then cached)
+    // GET /api/model-report/summary?days=14&sport=nba|nfl|all -> totals over cached reports
+    // POST /api/snapshot-now                  -> save prices now (owner)
+    if (pathname === "/api/model-report/dates" && request.method === "GET") {
+      if (!checkAuth(request, env)) return json({ error: "unauthorized" }, 401, origin);
+      return json({ dates: await snapshotDates(env), today: easternDate() }, 200, origin);
+    }
+    if (pathname === "/api/model-report" && request.method === "GET") {
+      if (!checkAuth(request, env)) return json({ error: "unauthorized" }, 401, origin);
+      const q = url.searchParams, date = q.get("date") || "", sport = q.get("sport") || "", stat = q.get("stat") || "";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !SNAPSHOT_SERIES[sport] || !SNAPSHOT_SERIES[sport][stat]) return json({ error: "bad date, sport or stat" }, 400, origin);
+      const key = `reports/${sport}/${date}/${stat}.json`;
+      const cached = await readJson(env.PROP_DATA, key, null);
+      if (cached && q.get("refresh") !== "1") return json({ ...cached, cached: true }, 200, origin);
+      if (date >= easternDate()) return json({ date, sport, stat, pending: "games not finished" }, 200, origin);
+      const snap = await snapshotTexts(env, date, SNAPSHOT_SERIES[sport][stat]);
+      if (!snap) return json({ date, sport, stat, missing: "no saved prices for this date" }, 200, origin);
+      const markets = snapshotRungs(snap.texts, stat, date);
+      if (!markets.length) { const empty = { date, sport, stat, snapshot: snap.time, rungs: [] }; await writeJson(env.PROP_DATA, key, empty); return json(empty, 200, origin); }
+      let rungs;
+      if (sport === "nba") {
+        const doc = await readJsonCached(env.PROP_DATA, NBA_TREND_LOGS_KEY, null);
+        if (!doc || String(doc.latestGameDate || "") < date) return json({ date, sport, stat, pending: "results not in the NBA logs yet" }, 200, origin);
+        const season = Number(doc.season) || Number(String(doc.season || "").split("-")[0]);
+        rungs = scoreRungs({ sport, stat, date, markets, doc, season, normalize: normName });
+      } else {
+        const trend = await readJsonCached(env.PROP_DATA, TREND_LOGS_KEY, null);
+        const week = trend ? nflWeekOf(trend.schedule, date) : null;
+        const have = trend && week && trend.players.some((r) => Number(r.season) === Number(trend.season) && Number(r.week) === week);
+        if (!have) return json({ date, sport, stat, pending: "results not in the NFL logs yet (Tuesday update)" }, 200, origin);
+        rungs = scoreRungs({ sport, stat, date, markets, trend, weekly: await readJson(env.PROP_DATA, STATS_KEY, null), normalize: normName });
+      }
+      const out = { date, sport, stat, snapshot: snap.time, rungs, computedAt: new Date().toISOString() };
+      await writeJson(env.PROP_DATA, key, out);
+      return json(out, 200, origin);
+    }
+    if (pathname === "/api/model-report/summary" && request.method === "GET") {
+      if (!checkAuth(request, env)) return json({ error: "unauthorized" }, 401, origin);
+      const days = Math.min(120, Math.max(1, parseInt(url.searchParams.get("days"), 10) || 14));
+      const sp = url.searchParams.get("sport") || "all";
+      const dates = (await snapshotDates(env, days)).filter((d) => d < easternDate());
+      const reports = [];
+      for (const sport of Object.keys(SNAPSHOT_SERIES)) {
+        if (sp !== "all" && sp !== sport) continue;
+        for (const d of dates) for (const stat of Object.keys(SNAPSHOT_SERIES[sport])) {
+          const r = await readJson(env.PROP_DATA, `reports/${sport}/${d}/${stat}.json`, null);
+          if (r && Array.isArray(r.rungs)) reports.push(r);
+        }
+      }
+      // Refit how much the estimate counts next to the Kalshi price, per sport, from these graded slates.
+      const bySport = {}, priceWeight = {};
+      for (const sport of Object.keys(SNAPSHOT_SERIES)) {
+        const reps = reports.filter((r) => r.sport === sport);
+        priceWeight[sport] = fitPriceWeight(reps);
+        bySport[sport] = summarizeReports(reps, { evWeight: priceWeight[sport].weight });
+      }
+      if (sp === "all" && days >= 14) { try { await writeJson(env.PROP_DATA, EV_WEIGHT_KEY, { ...priceWeight, days, at: new Date().toISOString() }); } catch (e) { /* best-effort */ } }
+      const byStat = {};
+      for (const r of reports) (byStat[`${r.sport} ${r.stat}`] ||= []).push(r);
+      const corrections = await readJson(env.PROP_DATA, CORRECTION_LOG_KEY, []);
+      return json({ dates, reports: reports.length, marketBenchmark: "Kalshi mid at the morning snapshot (about 11 AM ET), not the closing price",
+        corrections: Array.isArray(corrections) ? corrections.slice(-Math.max(days, 14)) : [], all: summarizeReports(reports), bySport, priceWeight,
+        byStat: Object.fromEntries(Object.entries(byStat).map(([k, v]) => [k, summarizeReports(v).accuracy])) }, 200, origin);
+    }
+    if (pathname === "/api/snapshot-now" && request.method === "POST") {
+      if (!checkAuth(request, env)) return json({ error: "unauthorized" }, 401, origin);
+      return json(await snapshotKalshi(env), 200, origin);
     }
 
     // ---- Manually trigger the stats refresh the cron does on schedule ----
@@ -733,6 +904,7 @@ const app = {
   // derived from user input, to avoid any SSRF-style risk.
   async scheduled(event, env, ctx) {
     // The daily trigger only pulls the NBA file; the weekly ones pull everything.
+    if (event && event.cron === SNAPSHOT_CRON) { await snapshotKalshi(env); return; }
     await refreshExternalStats(env, event && event.cron === NBA_DAILY_CRON ? ["nba-trend-logs", "nba-injuries"] : null);
   },
 };
@@ -755,7 +927,7 @@ export default {
         }
         if (auth.email) {
           // Only the owner may re-pull the shared stat feeds (when OWNER_EMAIL is set).
-          if (pathname === "/api/refresh-stats" && env.OWNER_EMAIL && !owner) {
+          if ((pathname === "/api/refresh-stats" || pathname === "/api/snapshot-now") && env.OWNER_EMAIL && !owner) {
             return withSecurityHeaders(json({ error: "only the owner can refresh the shared stat feeds" }, 403, corsOrigin(request, env)));
           }
           const prefix = await userPrefix(auth.email);
@@ -958,6 +1130,8 @@ const HTML = `<!doctype html>
   .inj.out { color:var(--red); background:#fde2e2; background:color-mix(in srgb, var(--red) 16%, transparent); }
   .inj.ok { color:var(--muted); background:var(--surface-2); }
   .tmout { display:block; font-size:11.5px; color:var(--muted); margin-top:2px; }
+  .oppflag { display:inline-block; font-size:11px; font-weight:700; padding:1px 6px; border-radius:6px; background:var(--surface-2); color:var(--muted); white-space:nowrap; }
+  .oppflag.below { color:#2563eb; } .oppflag.above { color:var(--red); }
   .grade { display:inline-block; min-width:30px; text-align:center; padding:2px 7px; border-radius:7px; font-weight:800; font-size:12px; }
   .grade.g-A { background:var(--heat4); color:var(--ink); } .grade.g-B { background:var(--heat2); color:var(--ink); border:1px solid var(--line); }
   .grade.g-C { background:var(--heat1); color:var(--ink); }
@@ -1037,6 +1211,7 @@ const HTML = `<!doctype html>
     <button data-tab="nbatrends">Tendency Matrix</button>
     <span class="group">Tracking</span>
     <button data-tab="picks">My Picks</button>
+    <button data-tab="report">Model Report</button>
     <span class="group">Manual</span>
     <button data-tab="input">Add Prop</button>
     <button data-tab="scored">Scored Props</button>
@@ -1060,6 +1235,7 @@ const HTML = `<!doctype html>
         <option value="17-25">17&ndash;25% (+500 to +300), model 5+ above</option>
         <option value="25-35">25&ndash;35% (+300 to +185), model 5+ above</option>
         <option value="35-45">35&ndash;45% (+185 to +120), model 5+ above</option>
+        <option value="ev">+EV: priced 30&ndash;65% at the ask, EV 3%+ after the fee (estimate blended with the Kalshi price)</option>
         <option value="48-53">48&ndash;53% (+110 to &minus;115), model 5+ above</option>
         <option value="55-65">55&ndash;65% (&minus;120 to &minus;185)</option>
         <option value="60-70">60&ndash;70% (&minus;150 to &minus;235)</option>
@@ -1071,16 +1247,17 @@ const HTML = `<!doctype html>
     <details class="opts"><summary>More options</summary>
       <div class="tg-controls">
         <div><label>Game day (blank = next slate)</label><input id="nflbDate" type="date" style="width:150px"></div>
-        <div><label>Sort by</label><select id="nflbSort"><option value="model" selected>Model estimate</option><option value="market">Market price</option><option value="edge">Edge (model &divide; price)</option></select></div>
+        <div><label>Sort by</label><select id="nflbSort"><option value="model" selected>Model estimate</option><option value="market">Market price</option><option value="edge">Edge (model &divide; price)</option><option value="ev">EV after the fee</option></select></div>
         <div><label>Rows</label><input id="nflbLimit" type="number" value="15" style="width:60px"></div>
         <div><label class="chk"><input type="checkbox" id="nflbForce"> Fresh prices</label></div>
         <div><label class="chk" title="Track records the suggested limit price as what you paid, with no fee (maker)"><input type="checkbox" id="nflbLimitMode"> I use limit orders</label></div>
+        <div><label title="Which estimate filters and ranks the Board. Hit chance: the estimate after a second pass over the player&#39;s longer record and last-game minutes or volume (NBA: all four markets; NFL: receptions, pass yards, rush attempts, rush yards; receiving yards use Proj). Proj (the opportunity projection) covers points, 3-pointers, receptions, rec / rush / pass yards and rush attempts; other markets use Model.">Rank by</label><select id="nflbRank"><option value="hit" selected>Hit chance</option><option value="proj">Proj (projection)</option><option value="model">Model (old)</option></select></div>
       </div>
     </details>
     <div id="nflbMeta"></div>
     <div id="nflbWrap" class="tablewrap"></div>
     <details class="how"><summary>How this list is built</summary>
-      <p class="hint">Each row is a Kalshi &ldquo;X or more&rdquo; rung (Over = X&minus;0.5; Under is the other side). A side is kept when its buy price is inside the band (in plus-money and coin-flip bands, only when the model is 5+ points above the price), the bid&ndash;ask spread is 14&cent; or less, the game has not kicked off and the model is not 10+ points below the market. One rung per player, stat and side. Sides where the model is 15+ points <i>above</i> the market are set aside as likely data errors. The model has not been shown to beat the market, so read these as most probable, not mispriced. NFL injuries are not loaded automatically: check Friday reports and inactives.</p>
+      <p class="hint">Each row is a Kalshi &ldquo;X or more&rdquo; rung (Over = X&minus;0.5; Under is the other side). A side is kept when its buy price is inside the band (in plus-money and coin-flip bands, only when the model is 5+ points above the price; in the +EV list, only when EV is 3% or more per dollar at the ask after Kalshi&#39;s fee, using the Kalshi price moved part of the way toward the estimate), the bid&ndash;ask spread is 14&cent; or less, the game has not kicked off and the model is not 10+ points below the market. One rung per player, stat and side. Sides where the model is 15+ points <i>above</i> the market are set aside as likely data errors. The model has not been shown to beat the market, so read these as most probable, not mispriced. NFL injuries are not loaded automatically: check Friday reports and inactives.</p>
       <div id="nflbNotes"></div>
     </details>
   </section>
@@ -1098,6 +1275,7 @@ const HTML = `<!doctype html>
         <option value="17-25">17&ndash;25% (+500 to +300), model 5+ above</option>
         <option value="25-35">25&ndash;35% (+300 to +185), model 5+ above</option>
         <option value="35-45">35&ndash;45% (+185 to +120), model 5+ above</option>
+        <option value="ev">+EV: priced 30&ndash;65% at the ask, EV 3%+ after the fee (estimate blended with the Kalshi price)</option>
         <option value="48-53">48&ndash;53% (+110 to &minus;115), model 5+ above</option>
         <option value="55-65">55&ndash;65% (&minus;120 to &minus;185)</option>
         <option value="60-70">60&ndash;70% (&minus;150 to &minus;235)</option>
@@ -1112,17 +1290,19 @@ const HTML = `<!doctype html>
         <div><label>Sort by</label><select id="nbbSort">
           <option value="market" selected>Market price (model as a veto)</option>
           <option value="model">Model estimate</option>
-          <option value="edge">Edge (model &divide; price)</option></select></div>
+          <option value="edge">Edge (model &divide; price)</option>
+          <option value="ev">EV after the fee</option></select></div>
         <div><label>Rows</label><input id="nbbLimit" type="number" value="15" style="width:60px"></div>
         <div><label class="chk"><input type="checkbox" id="nbbAllRungs"> Every rung</label></div>
         <div><label class="chk"><input type="checkbox" id="nbbForce"> Fresh prices</label></div>
         <div><label class="chk" title="Track records the suggested limit price as what you paid, with no fee (maker)"><input type="checkbox" id="nbbLimitMode"> I use limit orders</label></div>
+        <div><label title="Which estimate filters and ranks the Board. Hit chance: the estimate after a second pass over the player&#39;s longer record and last-game minutes or volume (NBA: all four markets; NFL: receptions, pass yards, rush attempts, rush yards; receiving yards use Proj). Proj (the opportunity projection) covers points, 3-pointers, receptions, rec / rush / pass yards and rush attempts; other markets use Model.">Rank by</label><select id="nbbRank"><option value="hit" selected>Hit chance</option><option value="proj">Proj (projection)</option><option value="model">Model (old)</option></select></div>
       </div>
     </details>
     <div id="nbbMeta"></div>
     <div id="nbbWrap" class="tablewrap"></div>
     <details class="how"><summary>How this list is built</summary>
-      <p class="hint">A side is kept when its buy price is inside the band, the game has not started, the player is not Out or Doubtful, he has recent games and the model is not 10+ points below the market. One rung per player, stat and side. Sorted by market price by default, with the model as a check. In the 48&ndash;53% band (about +110 to &minus;115) a side is kept only if the model is 5+ points above the price; 15+ points above is set aside as a likely data error. Matchup ranks: pace (1 = fastest), defensive rating (1 = best defense) and what the opponent allows to his position (1 = least). Check lineups before tip-off.</p>
+      <p class="hint">A side is kept when its buy price is inside the band, the game has not started, the player is not Out or Doubtful, he has recent games and the model is not 10+ points below the market. One rung per player, stat and side. Sorted by market price by default, with the model as a check. In the 48&ndash;53% band (about +110 to &minus;115) a side is kept only if the model is 5+ points above the price; 15+ points above is set aside as a likely data error. Matchup ranks: pace (1 = fastest), defensive rating (1 = best defense) and what the opponent allows to his position (1 = least). <b>Hit %</b> is the estimate after a second pass over the player&#39;s last 40 games (how often he cleared this number, his longer-run rate) and his last-game minutes; it was the most accurate of the app&#39;s three estimates on three seasons of games, and it ranks the Board by default. The price bands are unchanged. Check lineups before tip-off.</p>
       <div id="nbbNotes"></div>
     </details>
   </section>
@@ -1138,6 +1318,18 @@ const HTML = `<!doctype html>
       <span id="pkMsg" class="hint"></span>
     </div>
     <div id="picksWrap" class="tablewrap"></div>
+  </section>
+
+  <section id="report">
+    <h2>Model Report</h2>
+    <p class="hint">Every Kalshi NBA and NFL prop rung is saved each morning (about 11 AM ET). After the games, each rung is scored with the old Model and the projection (Proj), using only the stats from before that day, and graded. Scoring every rung on the same props is far less noisy than the record of 15 picks. Kalshi's own price is the bar to beat.</p>
+    <div class="toolbar">
+      <select id="rpDays"><option value="7">Last 7 days</option><option value="14" selected>Last 14 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select>
+      <button id="rpLoad" class="btn-primary">Load report</button>
+      <button id="rpSnap" title="Save Kalshi's prices right now (the cron does this every morning)">Save prices now</button>
+      <span id="rpMsg" class="hint"></span>
+    </div>
+    <div id="rpWrap" class="tablewrap"></div>
   </section>
 
   <section id="trends">
@@ -1265,7 +1457,7 @@ const HTML = `<!doctype html>
       <li><b>Add Prop</b>: for props not on Kalshi or when you know about an injury or role change the Board can't see.</li>
     </ol>
     <h3>How well it works</h3>
-    <p>In testing on thousands of props with closing lines, the model's probabilities did not beat the market, and a player's recent record against a line added nothing beyond the line itself. Treat model numbers as estimates and the market price as the benchmark.</p>
+    <p>The projection (Proj) has lower log loss than the old Model in walk-forward tests over three NBA seasons and two NFL seasons. Neither has been shown to beat the market: on Kalshi's own prices and on clean 2026 sportsbook lines, the market price was still the more accurate estimate. (Earlier tests against 2025 sportsbook closing lines are on hold: many of those "closes" turned out to be in-game lines, which makes the market look sharper than it was.) Treat model numbers as estimates and the market price as the benchmark; the Model Report tab tracks this on every saved Kalshi rung.</p>
     <h3>Data</h3>
     <p>Prices from Kalshi's public market data. NFL statistics and betting lines from nflverse; NBA statistics from the NBA's public stats and ESPN; NBA injury reports from the league's official report. Defensive ratings may come from third parties such as FTN (DVOA). For personal, non-commercial use.</p>
     <h3>Responsible gambling</h3>
@@ -1341,6 +1533,7 @@ document.querySelectorAll("nav button[data-tab]").forEach(btn => {
     document.getElementById(btn.dataset.tab).classList.add("active");
     if (btn.dataset.tab === "scored") loadScored();
     if (btn.dataset.tab === "picks") loadPicks(true);
+    if (btn.dataset.tab === "report" && !REPORT_LOADED) loadReport();
     if (btn.dataset.tab === "trends") loadTrends();
     if (btn.dataset.tab === "nbatrends") { loadNbaLines(); loadNbaTrends(); }
     if (btn.dataset.tab === "nbaboard") loadNbaBoard();
@@ -1466,6 +1659,8 @@ function renderTrendGrid(g) {
   const nbaCtx = g.sport === "nba" && g.rows.some(r => r.matchup || r.model);
   h += "<th>Above line</th><th>Avg</th>" + (showMin ? "<th>Min</th>" : "");
   if (nbaCtx) h += "<th title='" + esc(g.context ? g.context.note : "") + "'>Next opp &#9432;</th><th title='Opponent pace rank, 1 = fastest'>Pace</th><th title='Opponent defensive rating rank, 1 = best defense'>DRtg</th><th title='What the opponent allows to this position, 1 = least, 30 = most'>DvP</th><th title='Model estimate for the entered line (or the projected average when no line is entered). Not a pick.'>Model</th>";
+  const showOpp = g.rows.some(r => r.opportunity);
+  if (showOpp) h += "<th title='" + esc(g.opportunity ? g.opportunity.note : "") + "'>Proj (range) &#9432;</th>";
   h += "<th>Last " + esc(g.games) + " (newest first)</th></tr>";
   g.rows.forEach(r => {
     h += "<tr><td><b>" + esc(r.player) + "</b> <span class='hint'>" + esc(r.team || "") + "</span>" + injBadge(r.injury) +
@@ -1492,6 +1687,7 @@ function renderTrendGrid(g) {
         ? (md.pOver >= md.pUnder ? Math.round(md.pOver * 100) + "% over" : Math.round(md.pUnder * 100) + "% under") + " <span class='hint'>proj " + fmt(md.mean) + (md.pPlays < 1 ? ", if he plays (~" + Math.round(md.pPlays * 100) + "% chance)" : "") + "</span>"
         : "<span class='hint'>proj " + fmt(md.mean) + "</span>") + "</td>";
     }
+    if (showOpp) h += "<td>" + oppCell(r.opportunity, r.line) + "</td>";
     h += "<td class='vals' title='" + esc((r.weeks || []).join(", ")) + "'>" + r.values.map(fmt).map(esc).join(", ") + "</td></tr>";
   });
   h += "</table><details class='how' style='margin:10px 12px'><summary>About this table</summary><p class='hint'>" + esc(g.note) + " Data: " + esc(g.source) + (g.generatedAt ? ", generated " + esc(String(g.generatedAt).slice(0, 16).replace("T", " ")) + " UTC" : "") +
@@ -1500,6 +1696,37 @@ function renderTrendGrid(g) {
     (g.windowSeasonFallback ? " No games yet this season, so the window uses last season." : "") +
     (g.sport === "nba" ? " " + esc(injMeta(g.injuries)) : "") +
     " <b>Tendency grades</b> describe how one-sided each player's record against the entered line has been, ranked within this market. They are not predictions or picks; in testing, recent records against the line did not predict the next result.</p></details>";
+  return h;
+}
+// Opportunity projection cell: median with 10th-90th range, P for the line, volume note.
+const OPP_FLAG = { below: ["&#10052; cold", "Cold: last 5 games, results below what his shots are usually worth. A description, not a prediction"],
+  above: ["&#128293; hot", "Hot: last 5 games, results above what his shots are usually worth. A description, not a prediction"],
+  "role-up": ["&#8593; role", "More shots per minute lately"], "role-down": ["&#8595; role", "Fewer shots per minute lately"] };
+// Model % on the Boards: bold when it is the estimate ranking this row (Rank by: Model, or a
+// market the projection doesn't cover); plain when the projection ranks it.
+function modelPct(r) {
+  const v = Number.isFinite(r.modelCurrent) ? r.modelCurrent : r.model;
+  if (r.rankedBy === "hit" && Number.isFinite(r.hitChance)) {
+    const tip = "Hit chance: the estimate after a second pass over his last " + (r.hit ? r.hit.games : 20) + " games" + (r.hit ? " (this side came in " + Math.round(r.hit.share * 100) + "% of them)" : "") + " and his last-game " + (r.hit && r.hit.lastVol !== undefined ? "volume" : "minutes") + ". This ranks the Board (Rank by: Hit chance).";
+    return "<b title='" + esc(tip) + "'>" + Math.round(r.hitChance * 100) + "%</b> <span class='hint' title='Model estimate'>(" + Math.round(v * 100) + ")</span>";
+  }
+  return r.rankedBy === "proj" ? "<span class='hint' style='font-weight:600'>" + Math.round(v * 100) + "%</span>" : "<b>" + Math.round(v * 100) + "%</b>";
+}
+function oppCell(o, line, ranked) {
+  if (!o) return "<span class='hint'>-</span>";
+  const f = o.flag && OPP_FLAG[o.flag];
+  const eff = o.efficiencyRaw !== null && o.efficiencyRaw !== undefined
+    ? " Efficiency " + (Math.round(o.efficiency * 1000) / 1000) + " (his own " + (Math.round(o.efficiencyRaw * 1000) / 1000) + ", pulled toward the league)." : "";
+  const nfl = !!o.volLabel;
+  const nflTip = nfl ? " " + (Math.round(o.volume * 10) / 10) + " " + o.volLabel + " a game" +
+    (o.rateLabel && o.rateRaw !== null && o.rateRaw !== undefined ? " x " + o.rateLabel + " " + (Math.round(o.rate * 100) / 100) + " (his own " + (Math.round(o.rateRaw * 100) / 100) + ", pulled toward the league for his role)" : "") + "." : "";
+  const adj = o.scoringAdj && o.scoringAdj !== 1 ? " Includes a " + (Math.round((o.scoringAdj - 1) * 1000) / 10) + "% league scoring correction (how projections did over the last two weeks)." : "";
+  const tip = "Mean " + (Math.round(o.mean * 10) / 10) + ". 10th to 90th percentile " + o.floor + " to " + o.ceiling + "." + (nfl ? nflTip : eff) + adj + (o.note ? " " + o.note + "." : "");
+  let h = "<span title='" + esc(tip) + "'><b>" + esc(o.median) + "</b> <span class='hint'>(" + esc(o.floor) + "-" + esc(o.ceiling) + ")</span></span>";
+  const pO = o.pOver !== undefined ? o.pOver : null, pU = o.pUnder !== undefined ? o.pUnder : null;
+  if (line !== null && line !== undefined && pO !== null) h += " <span class='hint'>" + (pO >= pU ? Math.round(pO * 100) + "% o" : Math.round(pU * 100) + "% u") + "</span>";
+  if (o.model !== undefined && o.model !== null) h += ranked ? " <b title='This estimate ranks the Board (Rank by: Proj)'>" + Math.round(o.model * 100) + "%</b>" : " <span class='hint'>" + Math.round(o.model * 100) + "%</span>";
+  if (f) h += " <span class='oppflag " + esc(o.flag) + "' title='" + esc(f[1] + (o.note ? ". " + o.note : "")) + "'>" + f[0] + "</span>";
   return h;
 }
 function injBadge(inj) {
@@ -1536,6 +1763,7 @@ function dayLine(d, extra) {
 }
 // Same order as the server: "edge" = model / price (return per dollar), best for plus-money bands.
 function boardOrder(s) {
+  if (s === "ev") return (a, b) => b.ev - a.ev || b.model - a.model;
   if (s === "edge") return (a, b) => b.model / b.market - a.model / a.market || b.model - a.model;
   if (s === "model") return (a, b) => b.model - a.model || b.market - a.market;
   return (a, b) => b.market - a.market || b.model - a.model;
@@ -1544,6 +1772,7 @@ function boardOrder(s) {
 for (const [band, sort] of [["nbbBand", "nbbSort"], ["nflbBand", "nflbSort"]]) {
   document.getElementById(band).addEventListener("change", (ev) => {
     if (Number(ev.target.value.split("-")[0]) < 45) document.getElementById(sort).value = "edge";
+    if (ev.target.value === "ev") document.getElementById(sort).value = "ev";
   });
 }
 async function loadNbaBoard() {
@@ -1554,7 +1783,7 @@ async function loadNbaBoard() {
   const limit = Math.max(1, Math.min(100, Number(document.getElementById("nbbLimit").value) || 15));
   wrap.innerHTML = "<p class='hint' style='margin:12px'>Loading Kalshi prices...</p>";
   const results = await Promise.all(stats.map(async st => {
-    const q = new URLSearchParams({ stat: st, band, limit: "100" });
+    const q = new URLSearchParams({ stat: st, band, limit: "100", rank: RANK_BY });
     if (date) q.set("date", date);
     if (document.getElementById("nbbForce").checked) q.set("refresh", "1");
     q.set("sort", document.getElementById("nbbSort").value);
@@ -1575,7 +1804,8 @@ async function loadNbaBoard() {
   if (!rows.length) {
     h += "<p class='hint' style='margin:12px'>Nothing in this band right now. Lines usually post the morning of the game; try another band or day.</p>";
   } else {
-    h += "<table class='tg'><tr><th></th><th>Player</th><th>Pick</th><th title='Buy price for this side'>Price</th><th title='Model estimate, including his chance of playing. Not a pick.'>Model</th><th>Game</th><th title='Opponent ranks: pace (1 = fastest), defensive rating (1 = best), allowed to his position (1 = least)'>Matchup</th><th>Last 10 at this number</th></tr>";
+    h += "<table class='tg'><tr><th></th><th>Player</th><th>Pick</th><th title='Buy price for this side'>Price</th><th title='Hit chance in bold when it ranks the Board, then the Model estimate. Both include his chance of playing. Not a pick.'>" + (rows.some(r => r.rankedBy === "hit") ? "Hit % (Model)" : "Model") + "</th>" + (rows.some(r => r.opportunity) ? "<th title='Opportunity projection (points and 3-pointers): projected minutes x shots per minute x shooting efficiency pulled toward the league average. Median (10th-90th percentile), then its chance for this side. Shown for comparison; picks and filters still use Model.'>Proj (range) &#9432;</th>" : "") + "<th>Game</th><th title='Opponent ranks: pace (1 = fastest), defensive rating (1 = best), allowed to his position (1 = least)'>Matchup</th><th>Last 10 at this number</th></tr>";
+    const showOpp = rows.some(r => r.opportunity);
     rows.forEach((r, i) => {
       const c = r.context || {}, gm = r.game || {};
       const tm = (r.teammatesOut || []).map(t => esc(t.name) + (t.status === "Doubtful" ? " (D)" : ""));
@@ -1586,7 +1816,8 @@ async function loadNbaBoard() {
         (tm.length ? "<span class='tmout'>Teammates out: " + tm.join(", ") + "</span>" : "") + "</td>";
       h += "<td>" + esc(r.side) + " " + esc(r.line) + " " + esc(NBB_LABEL[r.stat] || r.stat) + "</td>";
       h += priceCell(r);
-      h += "<td><b>" + Math.round(r.model * 100) + "%</b>" + (r.pPlays < 1 ? " <span class='hint' title='" + esc(Math.round(r.modelIfPlays * 100) + "% if he plays, times about " + Math.round(r.pPlays * 100) + "% chance he plays") + "'>(Q)</span>" : "") + (r.caution ? " <span title='" + esc(r.caution) + "'>&#9888;</span>" : "") + "</td>";
+      h += "<td>" + modelPct(r) + (r.pPlays < 1 ? " <span class='hint' title='" + esc(Math.round(r.modelIfPlays * 100) + "% if he plays, times about " + Math.round(r.pPlays * 100) + "% chance he plays") + "'>(Q)</span>" : "") + (r.caution ? " <span title='" + esc(r.caution) + "'>&#9888;</span>" : "") + "</td>";
+      if (showOpp) h += "<td>" + oppCell(r.opportunity, null, r.rankedBy === "proj") + "</td>";
       h += "<td>" + (gm.opp ? (gm.home ? "vs " : "@ ") + esc(gm.opp) + " <span class='hint'>" + esc(tipEt(gm.tip)) + "</span>" : esc(gm.date || "")) + "</td>";
       h += "<td class='hint'>" + [c.paceRank ? "pace #" + esc(c.paceRank) : "", c.drtgRank ? "D #" + esc(c.drtgRank) : "", c.dvp ? "vs pos #" + esc(c.dvp.rank) : ""].filter(Boolean).join(" &middot; ") + "</td>";
       h += "<td class='vals'>" + esc(r.last10Record) + ": " + r.last10.map(esc).join(", ") + "</td></tr>";
@@ -1601,8 +1832,9 @@ async function loadNbaBoard() {
     (hurt.length ? " (" + hurt.slice(0, 10).map(x => esc(x.name)).join(", ") + (hurt.length > 10 ? ", ..." : "") + ")" : "") + ", " +
     esc(ex.started || 0) + " already started, " + esc(ex.wideSpread || 0) + " wide spreads, " + esc(ex.modelDisagrees || 0) + " where the model is 10+ below the market, " +
     esc(ex.duplicateRung || 0) + " extra rungs, " + esc(ex.unknownPlayer || 0) + " players not in the game logs" +
-    (ex.belowMinGap ? ", " + esc(ex.belowMinGap) + " where the model is less than 5 points above the price" : "") +
-    (ex.likelyDataError ? ", " + esc(ex.likelyDataError) + " set aside as likely data errors (model 15+ above)" : "") + ". " + esc(injMeta(d.injuries)) + "</p>";
+    (ex.belowMinGap ? ", " + esc(ex.belowMinGap) + " where the model is less than 5 points above the price" : "") + (ex.belowMinEv ? ", " + esc(ex.belowMinEv) + " under +3% EV after the fee" : "") +
+    (ex.likelyDataError ? ", " + esc(ex.likelyDataError) + " set aside as likely errors (estimate 15+ above the price; 25+ in the +EV list: usually a role change or news the logs do not have)" : "") + ". " + esc(injMeta(d.injuries)) + "</p>" +
+    (results.some(r => r.ok && r.data.projMissing) ? "<p class='hint'><b>Proj is not running for points and 3-pointers:</b> the NBA logs have no shot data yet (run the updated &ldquo;Compute NBA trend logs&rdquo; action). Until then the hit chance for those two markets starts from the Model, which tested less accurate than starting from Proj.</p>" : "");
 }
 document.getElementById("nbbRefresh").addEventListener("click", loadNbaBoard);
 
@@ -1616,7 +1848,7 @@ async function loadNflBoard() {
   const limit = Math.max(1, Math.min(100, Number(document.getElementById("nflbLimit").value) || 15));
   wrap.innerHTML = "<p class='hint' style='margin:12px'>Loading Kalshi prices...</p>";
   const results = await Promise.all(stats.map(async st => {
-    const q = new URLSearchParams({ stat: st, band, sort, limit: "100" });
+    const q = new URLSearchParams({ stat: st, band, sort, limit: "100", rank: RANK_BY });
     if (date) q.set("date", date);
     if (document.getElementById("nflbForce").checked) q.set("refresh", "1");
     const res = await fetch(API + "/api/nfl-board?" + q.toString(), { headers: authHeaders() });
@@ -1633,13 +1865,14 @@ async function loadNflBoard() {
   meta.innerHTML += dayLine(d, d.scheduleIncluded ? "" : " &middot; <b>no schedule loaded, so kickoffs can't be checked</b>");
   if (!rows.length) h += "<p class='hint' style='margin:12px'>Nothing in this band right now. Boards fill in during the week; try another band or day.</p>";
   else {
-    h += "<table class='tg'><tr><th></th><th>Player</th><th>Pick</th><th title='Buy price for this side'>Price</th><th title='Model estimate. Not a pick.'>Model</th><th>Game</th><th title='Opponent defensive rank, 1 = best'>Opp D</th><th title='His team&#39;s spread / game total, and how much that moved the projection'>Line</th><th>This season at this number</th></tr>";
+    h += "<table class='tg'><tr><th></th><th>Player</th><th>Pick</th><th title='Buy price for this side'>Price</th><th title='Hit chance in bold when it ranks the row, then the Model estimate. Not a pick.'>" + (rows.some(r => r.rankedBy === "hit") ? "Hit % (Model)" : "Model") + "</th>" + (rows.some(r => r.opportunity) ? "<th title='Opportunity projection: targets / carries / pass attempts x his catch rate or yards per touch, pulled toward the league average for his role, with the game-script adjustment. Median (10th-90th percentile), then its chance for this side. Shown for comparison; picks and filters still use Model.'>Proj (range) &#9432;</th>" : "") + "<th>Game</th><th title='Opponent defensive rank, 1 = best'>Opp D</th><th title='His team&#39;s spread / game total, and how much that moved the projection'>Line</th><th>This season at this number</th></tr>";
     rows.forEach((r, i) => {
       const g = r.game || {};
       h += "<tr>" + trackCell("nfl", i) + "<td><b>" + esc(r.player) + "</b> <span class='hint'>" + esc(r.team || "") + " " + esc(r.position || "") + "</span></td>";
       h += "<td>" + esc(r.side) + " " + esc(r.line) + " " + esc(r.unit) + "</td>";
       h += priceCell(r);
-      h += "<td><b>" + Math.round(r.model * 100) + "%</b>" + (r.caution ? " <span title='" + esc(r.caution) + "'>&#9888;</span>" : "") + "</td>";
+      h += "<td>" + modelPct(r) + (r.caution ? " <span title='" + esc(r.caution) + "'>&#9888;</span>" : "") + "</td>";
+      if (rows.some(x => x.opportunity)) h += "<td>" + oppCell(r.opportunity, null, r.rankedBy === "proj") + "</td>";
       h += "<td>" + (g.opp ? (g.home ? "vs " : "@ ") + esc(g.opp) + " <span class='hint'>" + esc(tipEt(g.kickoff)) + "</span>" : esc(g.date || "")) + "</td>";
       h += "<td>" + (r.oppDefRank ? "#" + esc(r.oppDefRank) : "<span class='hint'>-</span>") + "</td>";
       h += "<td>" + (r.teamSpread !== null && r.teamSpread !== undefined
@@ -1656,7 +1889,7 @@ async function loadNflBoard() {
   notes.innerHTML = (errs.length ? "<p class='hint'><b>Set aside as likely data errors</b> (model 15+ points above the market): " + errs.map(e => esc(e.player) + " " + esc(e.side) + " " + esc(e.line) + " " + esc(e.unit) + " (" + Math.round(e.model * 100) + "% vs " + Math.round(e.market * 100) + "%)").join(", ") + ".</p>" : "") +
     "<p class='hint'><b>Left out this time:</b> " + esc(ex.started || 0) + " kicked off, " + esc(ex.wideSpread || 0) + " wide spreads, " + esc(ex.modelDisagrees || 0) + " where the model is 10+ below the market, " +
     esc(ex.duplicateRung || 0) + " extra rungs, " + esc(ex.unknownPlayer || 0) + " players not in the logs, " + esc(ex.wrongGame || 0) + " team mismatches (trades)" +
-    (ex.belowMinGap ? ", " + esc(ex.belowMinGap) + " where the model is less than 5 points above the price" : "") + ".</p>";
+    (ex.belowMinGap ? ", " + esc(ex.belowMinGap) + " where the model is less than 5 points above the price" : "") + (ex.belowMinEv ? ", " + esc(ex.belowMinEv) + " under +3% EV after the fee" : "") + ".</p>";
 }
 document.getElementById("nflbRefresh").addEventListener("click", loadNflBoard);
 document.getElementById("tgRefresh").addEventListener("click", loadTrends);
@@ -1740,8 +1973,22 @@ try { LIMIT_MODE = localStorage.getItem("limitMode") === "1"; } catch (e) { /* s
 function execFields(r) {
   const useLimit = LIMIT_MODE && r.limit > 0 && r.limit < 1;
   const paid = useLimit ? r.limit : r.market;
-  return { marketProb: r3(paid), odds: priceToOdds(paid), orderType: useLimit ? "maker" : "taker",
+  return { modelProb: Number.isFinite(r.modelCurrent) ? r3(r.modelCurrent) : "", projProb: Number.isFinite(r.modelProj) ? r3(r.modelProj) : "",
+    rankedBy: r.rankedBy || "", hitProb: Number.isFinite(r.hitChance) ? r3(r.hitChance) : "",
+    marketProb: r3(paid), odds: priceToOdds(paid), orderType: useLimit ? "maker" : "taker",
     pickMid: r.mid > 0 && r.mid < 1 ? r3(r.mid) : "", pickSpread: r.spread !== null && r.spread !== undefined ? r3(r.spread) : "", limitPrice: r.limit || "" };
+}
+// Rank by: "proj" (default) or "model"; remembered on this device, same for both Boards.
+let RANK_BY = "hit";
+try { const rb = localStorage.getItem("rankBy2"); if (rb === "model" || rb === "proj") RANK_BY = rb; } catch (e) { /* default hit */ }
+for (const id of ["nflbRank", "nbbRank"]) {
+  const el = document.getElementById(id);
+  el.value = RANK_BY;
+  el.addEventListener("change", () => {
+    RANK_BY = ["model", "proj"].includes(el.value) ? el.value : "hit";
+    for (const o of ["nflbRank", "nbbRank"]) document.getElementById(o).value = RANK_BY;
+    try { localStorage.setItem("rankBy2", RANK_BY); } catch (e) { /* not remembered */ }
+  });
 }
 for (const id of ["nflbLimitMode", "nbbLimitMode"]) {
   const el = document.getElementById(id);
@@ -1757,6 +2004,7 @@ const WIDE_SPREAD = 0.05;
 function priceCell(r) {
   const wide = r.spread !== null && r.spread !== undefined && r.spread > WIDE_SPREAD;
   return "<td>" + Math.round(r.market * 100) + "&cent; <span class='hint'>" + esc(amOdds(r.market)) + "</span>" +
+    (Number.isFinite(r.ev) && r.ev >= 0.03 ? "<br><b title='Expected value per dollar buying at the ask, after the 7% x price x (1 - price) taker fee. The chance used is the Kalshi price moved part of the way toward the estimate (" + (Number.isFinite(r.fair) ? Math.round(r.fair * 100) + "%" : "") + "), because the price has been the more accurate number. On the raw estimate it would read " + (Number.isFinite(r.evRaw) ? (r.evRaw >= 0 ? "+" : "") + Math.round(r.evRaw * 100) + "%" : "n/a") + ". Not a proven edge.'>EV +" + Math.round(r.ev * 100) + "%</b>" : "") +
     (r.limit && r.limit < r.market - 0.004 ? "<br><span class='lim' title='Rest a limit order here instead of paying the ask: no fee as a maker on most markets, and you skip most of the spread'>limit " + Math.round(r.limit * 100) + "&cent;</span>" : "") +
     (wide ? " <span class='inj' title='Bid-ask spread " + Math.round(r.spread * 100) + "c: paying the ask here costs a lot; use a limit order or skip'>wide " + Math.round(r.spread * 100) + "&cent;</span>" : "") + "</td>";
 }
@@ -1808,7 +2056,17 @@ function summaryCards(s) {
       (s.clv && s.clv.n ? "<b class='" + (s.clv.avg > 0 ? "over" : s.clv.avg < 0 ? "under" : "") + "'>" + cents(s.clv.avg) + "</b><small>avg CLV; " + esc(s.clv.beat) + " of " + esc(s.clv.n) + " beat the close" + (s.clv.same ? ", " + esc(s.clv.same) + " even" : "") +
           (s.clv.execution !== null || s.clv.movement !== null ? "<br>execution " + (s.clv.execution !== null ? cents(s.clv.execution) : "-") + " &middot; market move " + (s.clv.movement !== null ? cents(s.clv.movement) : "-") : "") +
           (s.clv.stale ? "<br>" + esc(s.clv.stale) + " stale close" + (s.clv.stale > 1 ? "s" : "") + " left out" : "") + "</small>"
-        : "<b>-</b><small>shows once a tracked game starts</small>") + "</div>";
+        : "<b>-</b><small>shows once a tracked game starts</small>") + "</div>" + compareCard(s.compare);
+}
+// Projection vs old model on your graded picks (picks tracked with both estimates saved).
+function compareCard(c) {
+  if (!c || (!c.n && c.rankedByProj.record === "0-0" && c.rankedByModel.record === "0-0")) return "";
+  const b = (v) => v === null ? "-" : (Math.round(v * 1000) / 1000).toFixed(3);
+  const better = c.n >= 1 && c.brierProj !== null ? (c.brierProj < c.brierModel ? "Proj" : c.brierProj > c.brierModel ? "Model" : "tie") : null;
+  return "<div class='card' title='On your graded picks that saved both estimates: the average each one gave, the actual hit rate, and Brier score (average squared miss; lower = more accurate). Then the record of picks made while the Board ranked by each. Needs 50+ picks before it means much.'><span>Proj vs Model</span>" +
+    "<b>" + (better ? esc(better) : "-") + "</b><small>" + (c.n ? esc(c.n) + " picks: hit " + pct(c.hitRate) + ", Proj said " + pct(c.projSaid) + ", Model said " + pct(c.modelSaid) +
+      "<br>Brier Proj " + b(c.brierProj) + " &middot; Model " + b(c.brierModel) : "no picks with both estimates yet") +
+    "<br>ranked by Proj " + esc(c.rankedByProj.record) + " (" + (c.rankedByProj.units > 0 ? "+" : "") + esc(c.rankedByProj.units) + "u) &middot; by Model " + esc(c.rankedByModel.record) + " (" + (c.rankedByModel.units > 0 ? "+" : "") + esc(c.rankedByModel.units) + "u)</small></div>";
 }
 function closeCell(e) {
   if (e.clv !== null && e.clv !== undefined) {
@@ -1821,6 +2079,68 @@ function closeCell(e) {
   if (!e.ticker) return "<span class='hint' title='Only picks tracked from a Board have a Kalshi market to check'>-</span>";
   return "<span class='hint'>" + (e.kickoff && Date.parse(e.kickoff) > Date.now() ? "at kickoff" : "checking") + "</span>";
 }
+// ---- Model Report ----
+let REPORT_LOADED = false;
+const RP_STATS = { nba: ["points", "rebounds", "assists", "threes"], nfl: ["receptions", "receiving_yards", "rushing_yards", "carries", "passing_yards"] };
+async function loadReport() {
+  REPORT_LOADED = true;
+  const msg = document.getElementById("rpMsg"), wrap = document.getElementById("rpWrap");
+  const days = document.getElementById("rpDays").value;
+  msg.textContent = "Finding saved prices...";
+  const dr = await fetch(API + "/api/model-report/dates", { headers: authHeaders() }).then(r => r.json()).catch(() => ({}));
+  const dates = (dr.dates || []).filter(d => d < dr.today).slice(0, Number(days));
+  if (!dates.length) { msg.textContent = ""; wrap.innerHTML = "<p class='hint' style='margin:12px'>No finished slates with saved prices yet. Prices are saved every morning once the cron is set up (or press Save prices now); a slate shows here the day after its games, NFL after the Tuesday stats update.</p>"; return; }
+  const jobs = []; for (const d of dates) for (const sp of ["nba", "nfl"]) for (const st of RP_STATS[sp]) jobs.push([d, sp, st]);
+  let done = 0, pending = 0;
+  const run = async () => { while (jobs.length) { const [d, sp, st] = jobs.shift();
+    const r = await fetch(API + "/api/model-report?" + new URLSearchParams({ date: d, sport: sp, stat: st }), { headers: authHeaders() }).then(x => x.json()).catch(() => ({}));
+    if (r.pending) pending++; done++; msg.textContent = "Scoring slates... " + done + " of " + (done + jobs.length); } };
+  await Promise.all([run(), run(), run()]);
+  const sm = await fetch(API + "/api/model-report/summary?days=" + days, { headers: authHeaders() }).then(r => r.json()).catch(() => ({}));
+  msg.textContent = (sm.reports || 0) + " slate-markets scored" + (pending ? " (" + pending + " waiting for results)" : "");
+  wrap.innerHTML = renderReport(sm);
+}
+function renderReport(sm) {
+  if (!sm || !sm.all || !sm.all.accuracy.rungs) return "<p class='hint' style='margin:12px'>Nothing graded yet.</p>";
+  const f = (x) => x === null || x === undefined ? "-" : x.toFixed(4);
+  const accRow = (label, a) => {
+    const d = a.projMinusModel, se = a.se, t = d !== null && se ? d / se : null;
+    const t2 = d !== null && a.seSlate ? d / a.seSlate : null, tt = t2 !== null ? (Math.abs(t2) < Math.abs(t) ? t2 : t) : t;
+    const verdict = tt === null ? "" : tt < -2 ? "Proj lower log loss" : tt > 2 ? "Model lower log loss" : "too close to call yet";
+    const best = Math.min(a.logLoss.market, a.logLoss.model, a.logLoss.proj);
+    const cell = (v) => "<td" + (v === best ? " style='font-weight:700'" : "") + ">" + f(v) + "</td>";
+    return "<tr><td><b>" + esc(label) + "</b></td><td>" + esc(a.rungs) + "</td>" + cell(a.logLoss.market) + cell(a.logLoss.model) + cell(a.logLoss.proj) +
+      "<td>" + (d === null ? "-" : (d > 0 ? "+" : "") + d.toFixed(3) + (se ? " &plusmn; " + Math.max(se, a.seSlate || 0).toFixed(3) : "")) + "</td><td>" + esc(verdict) + "</td></tr>";
+  };
+  let h = "<h3 style='margin:12px'>Accuracy on every rung</h3><p class='hint' style='margin:0 12px'>Log loss: lower is better (a coin flip is 0.693). Bold = best. The Kalshi column is the mid at the morning snapshot, not the closing price. Proj - Model is per player-night; negative favors Proj. The &plusmn; is the larger of a per-player-night and a per-slate (clustered) standard error, and the difference needs to be about twice it before it means anything.</p>";
+  const cs = sm.corrections || [];
+  if (cs.length) { const last = cs[cs.length - 1]; h += "<p class='hint' style='margin:6px 12px'>NBA points scoring correction: " + (last.factor >= 1 ? "+" : "") + (Math.round((last.factor - 1) * 1000) / 10) + "% as of " + esc(last.asOf) + " (last " + cs.length + " days: " + cs.map(c => (Math.round((c.factor - 1) * 1000) / 10)).join(", ") + ")</p>"; }
+  h += "<table class='tg'><tr><th></th><th>Rungs</th><th title='Kalshi mid at the morning snapshot (about 11 AM ET), not the closing price'>Kalshi 11 AM mid</th><th>Model</th><th>Proj</th><th>Proj - Model</th><th></th></tr>";
+  h += accRow("All", sm.all.accuracy);
+  for (const sp of ["nba", "nfl"]) if (sm.bySport[sp] && sm.bySport[sp].accuracy.rungs) h += accRow(sp.toUpperCase(), sm.bySport[sp].accuracy);
+  for (const [k, a] of Object.entries(sm.byStat || {})) if (a.rungs) h += accRow(k.replace("_", " "), a);
+  h += "</table>";
+  const ha = sm.all.accuracy.hit;
+  if (ha) h += "<p class='hint' style='margin:6px 12px'><b>Hit chance (NBA: all four markets; NFL: receptions, pass yds, rush att, rush yds), " + esc(ha.rungs) + " rungs:</b> Kalshi " + f(ha.logLoss.market) + " &middot; Model " + f(ha.logLoss.model) + " &middot; Hit chance " + f(ha.logLoss.hit) + ". Slates scored before the hit chance was added are not counted here.</p>";
+  const L = sm.all.lists || {};
+  const listRow = (label, t) => !t ? "" : "<tr><td>" + esc(label) + "</td><td>" + esc(t.slates) + "</td><td>" + esc(t.hits) + "-" + esc(t.picks - t.hits) + "</td><td>" + pct(t.hitRate) + "</td><td>" + pct(t.breakEven) + "</td><td class='" + (t.units > 0 ? "over" : t.units < 0 ? "under" : "") + "'>" + (t.units > 0 ? "+" : "") + esc(t.units) + "</td></tr>";
+  h += "<h3 style='margin:16px 12px 4px'>The top 15 each would have picked</h3><p class='hint' style='margin:0 12px'>A copy of the Board's rules on the saved prices: per slate, one pick per player, graded at the buy price (no fees). 66-75%: highest price first, dropped when the estimate is 10+ below the price. Coin flip: price 48-53%, estimate 5-15 points above, biggest gap first. Hit chance rows: the same lists ranked by the hit chance (Proj or the Model where there is none). +EV list: price 30-65% at the ask, EV 3%+ after the fee on the chance blended with the Kalshi mid, highest EV first, estimates 25+ points above the price set aside; the raw row uses the estimate alone (15+ points above set aside). Differences from the live Board: no injury filter (DNPs are not counted) and spreads up to 20 cents. These records are much noisier than the table above.</p>";
+  h += "<table class='tg'><tr><th>List</th><th>Slates</th><th>Record</th><th>Hit rate</th><th>Break-even</th><th>Units</th></tr>" +
+    listRow("66-75%, Model", L["66-75|cur"]) + listRow("66-75%, Proj", L["66-75|proj"]) + listRow("Coin flip, Model", L["coin|cur"]) + listRow("Coin flip, Proj", L["coin|proj"]) +
+    listRow("66-75%, Hit chance", L["66-75|hit"]) + listRow("Coin flip, Hit chance", L["coin|hit"]) +
+    listRow("+EV list (blended with the price)", L["ev|hit"]) + listRow("+EV list, raw estimate", L["evraw|hit"]) + "</table>";
+  const pw = sm.priceWeight || {};
+  h += "<p class='hint' style='margin:6px 12px'><b>Weight on the estimate next to the Kalshi price</b> (used by the +EV list; starts at 0.30 and is refit here from graded slates): " +
+    ["nba", "nfl"].map(k => pw[k] ? k.toUpperCase() + " " + esc(pw[k].weight) + (pw[k].fitted === null ? " (no graded slates yet)" : " (fit " + esc(pw[k].fitted) + " on " + esc(pw[k].playerNights) + " player-nights)") : "").filter(Boolean).join(" &middot; ") + ".</p>";
+  return h;
+}
+document.getElementById("rpLoad").addEventListener("click", loadReport);
+document.getElementById("rpSnap").addEventListener("click", async () => {
+  const msg = document.getElementById("rpMsg"); msg.textContent = "Saving prices...";
+  const r = await fetch(API + "/api/snapshot-now", { method: "POST", headers: authHeaders() }).then(x => x.json()).catch(() => ({}));
+  msg.textContent = r.error ? r.error : "Saved " + Object.keys(r.saved || {}).length + " markets for " + (r.day || "today") + (r.failed && r.failed.length ? " (" + r.failed.length + " failed)" : "");
+});
+
 let PICKS = null;
 function renderPicks() {
   if (!PICKS) return;

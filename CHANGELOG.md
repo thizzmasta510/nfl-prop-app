@@ -935,3 +935,156 @@ averaged when no v9 single score is present. Verified by simulation.
   (tighter text extraction, space-tolerant patterns, team must be in the matchup), with a quality
   gate that falls back to ESPN when under 90% of rows have a team, a fixture test run in the
   workflow, and runs starting at 8 AM ET.
+
+## NBA opportunity projection
+- New `src/nba_opportunity.js`: points and 3-pointers projected as minutes x shots
+  per minute x shooting efficiency, with efficiency pulled toward the league
+  average (150 shooting plays / 200 three-point attempts count as much as the
+  league). Floor / median / ceiling (10th / 50th / 90th percentile) and a volume
+  vs results note (cold, hot, role up, role down).
+- NBA Board and Tendency Matrix: new "Proj (range)" column for points and
+  3-pointers. Shown next to Model; picks and filters still use Model.
+- Data job stores FGA, FGM, 3PA, FTA, FTM and offensive / defensive rebounds for
+  every player-game, plus season shooting totals (`efficiency`), with a parser
+  test in the workflow.
+- `backtest/nba_opportunity_backtest.mjs` (+ `hoopr_box.mjs`, `parquet_lite.mjs`
+  to build the box score file from public hoopR data). On 2025-26 and early
+  2026-27: log loss 0.4983 vs 0.5014 (points), 0.5071 vs 0.5134 (threes).
+- Review round 4 fixes: All-Star games (ESPN tags them regular season) are skipped by the
+  data job and the backtest; the backtest asserts every prior game is strictly before the
+  target; hot / cold flags keep their names, with tooltips saying they describe the last 5
+  games vs what his shots are usually worth (not a prediction) with their thresholds in one exported
+  `FLAG_RULES` and pinned by tests; season shooting totals moved into a tested
+  `efficiency_totals()`.
+- **Projection accuracy (points):** a self-correcting league scoring adjustment. Each day the
+  projection checks how it did over the last 14 days (actual points vs projected, all players,
+  walk-forward) and scales points projections by that ratio, pulled toward no change as if 600
+  more games had matched. Early 2026-27 it was running about 9% high; with the correction,
+  2026-27 log loss 0.4814 -> 0.4779 and the 70-80% bucket hits 71% instead of 63%. On
+  2024-25 (no bias) it changes nothing. Shown in the Proj tooltip and the Matrix note.
+- **Hot / cold bounce-back:** tested keeping 15-50% of the last-5 shooting for cold players.
+  Over three seasons cold players were under-projected in one and over-projected in another,
+  and every setting made both worse, so the projection keeps full regression (option left off).
+- All-Star weekend games are recognized by team (only the 30 NBA teams count); 2025's used
+  three-letter codes (CHK, KEN, SHQ, CAN) that the earlier length check missed.
+- Backtest now covers 2024-25 through 2026-27 (2024-25 is fully out of sample) and applies the
+  same correction as the app (`--no-correction` to turn it off).
+
+## NFL opportunity projection
+- New `src/nfl_opportunity.js`: receptions = targets x catch rate, receiving yards = targets x
+  yards per target, carries, rushing yards = carries x yards per carry, passing yards = attempts x
+  yards per attempt. Volume from this season (0.85 per game back) plus last season as 2 games;
+  efficiency pulled toward the league average for his role (QB / RB / receiver), with how hard
+  measured on 2021-2024. Volume negative binomial; receptions binomial on targets; yards a gamma
+  per touch count mixed over volume. Floor / median / ceiling and 3-game hot / cold tags.
+- NFL Board and Tendency Matrix: "Proj (range)" column for those five markets, with the Board's
+  game-script adjustment applied to volume. Picks and filters still use Model.
+- Walk-forward at fixed rungs (no lines), log loss current -> projection: 2025 receptions
+  0.487 -> 0.485, receiving yards 0.505 -> 0.477, carries 0.492 -> 0.479, rushing yards
+  0.538 -> 0.499, passing yards 0.602 -> 0.587 (2024 the same direction); calibrated within a
+  few points. Week 8 Kalshi rungs: market 0.613, current 0.697, projection 0.662.
+- A league self-correction like the NBA one was tested and made every NFL market slightly worse,
+  so it is not used.
+- Found: the 2025 SGO backfill's closing lines are often in-game lines (see backtest/README.md).
+
+## Rank by Proj
+- Both Boards: "Rank by" under More options, Proj (default) or Model, remembered per device.
+  With Proj, the projection does the filtering (model-disagrees veto, coin-flip gap, likely-data-
+  error check), the one-rung-per-player choice and the model sort for points, 3-pointers,
+  receptions, receiving / rushing / passing yards and rush attempts. Rebounds, assists and the
+  rest keep Model. The estimate doing the ranking is shown in bold.
+- Tracking saves both estimates (modelProb, projProb) and which one ranked the Board (rankedBy).
+- My Picks: a "Proj vs Model" card on graded picks: what each said vs the actual hit rate, Brier
+  for each (lower = more accurate), and the record and units of picks ranked by each.
+
+## Model Report
+- A daily cron (16:00 UTC, about 11 AM ET) saves Kalshi's open NBA and NFL player-prop markets
+  to R2 as returned (`snapshots/<date>/<time>/<series>-<page>.json`, about 10-20 requests, no
+  parsing in the cron). Add `"0 16 * * *"` to the crons in wrangler.toml. POST /api/snapshot-now
+  (owner) saves them on demand.
+- New Model Report tab: after the games, every saved rung of a slate is scored with the old
+  Model and the projection using only stats from before that day (the Board code with no band or
+  veto), graded, and cached (`reports/<sport>/<date>/<stat>.json`). Shows log loss for Kalshi's
+  price, Model and Proj on the same rungs with the paired difference and its standard error, by
+  sport and market, and the top-15 lists each would have made (66-75% and coin flip) with record,
+  break-even and units. NFL slates grade after the Tuesday stats update.
+
+## Review round 5
+- NBA points self-correction: wording is "neutral when there is no bias (2024-25), corrected a
+  ~1-point early-season bias seen in one season (2026-27)", not a general accuracy gain. Its
+  daily factor is now kept (`corrections/nba-points.json`, shown in the Model Report) so jumps
+  or a gap with the backtest can be told from a regime change. Tests pin its parameters and that
+  games on the as-of date never count.
+- Matchup-factor check (does the league correction hide a bad matchup factor?): over 2025-26
+  the matchup factor removes most of the tough/soft bias (soft > 1.05: +11.6% residual without it,
+  +4.8% with it) and the correction is neutral; in the first two weeks of 2026-27 soft matchups are
+  over-projected (n = 134-614 per bucket) while early 2025-26 showed no such pattern. Watching.
+- NFL: parameters (role priors, k, volume sizes, weights) pinned by tests. QB rushing check:
+  established QBs are over-projected (-4.5% to -19%) and QBs with under 30 career carries in the
+  data under-projected (+13%); follow-up, not yet changed.
+- 2025 SportsGameOdds closes: `backtest/sgo_check.mjs` warns when a season's yards closes sit
+  within 3 yards of the result too often (in-game lines); market_vs_model, kalshi_vs_books and the
+  NFL backtest print it. Round 1-3 results that used them are on hold; the About page no longer
+  cites them.
+- Model Report: the market column is labeled "Kalshi 11 AM mid" (not the close); the Proj - Model
+  error bar is the larger of the per-player-night and the slate-clustered standard error; the list
+  simulation's rules are spelled out (one per player, 10-point veto; no injury filter, spreads up
+  to 20 cents).
+
+## Private repo support
+- The NFL stats, NBA stats and NBA injury workflows now also upload their files straight into the
+  app's R2 bucket (`github-action/upload_r2.sh`, AWS CLI against R2's S3 endpoint), so the app keeps
+  getting fresh data when the repo is private and raw GitHub links stop working. Needs repository
+  secrets R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and CLOUDFLARE_ACCOUNT_ID (optional variable
+  R2_BUCKET, default nfl-prop-data); without them the step is skipped. The upload checks the file
+  is a feed (has a players list) first, and never blocks the commit step.
+- LICENSE: all rights reserved.
+
+## Hit chance (NBA) and wider points spread
+Goal: make the stated chance that a side hits as accurate as possible (not to beat the price).
+- **Points spread widened 20%** (`SPREAD_ADJ` in `src/nba_model.js`). Over 2024-25, 2025-26 and
+  the start of 2026-27 (walk-forward, 51,869 player-games) a stated 90-95% on points hit 88%, and
+  points Unders were off the same way. x1.2 was the best multiplier in each of the three seasons;
+  rebounds, assists and 3-pointers were best at x1.0 and are unchanged.
+- **Hit chance** (`src/hit_chance.js`): a second pass over the Board's estimate (Proj where it
+  exists, otherwise Model) using how often the player cleared the number over up to 40 games, his
+  longer-run per-minute rate, and last-game minutes against his 10-game average. Logistic, fit per
+  stat, tested walk-forward by season: log loss fell on all four stats in both test seasons
+  (all stats, 40-game table: 0.4445 to 0.4407; rebounds 0.4545 to 0.4484). With only 20 games on
+  file it uses a 20-game table (about half the gain).
+- **Data job** now fetches 40 games per team and writes games 21-40 per player as a compact
+  `history` block (`history_games` in `github-action/compute_nba_logs.py`). Until the job has run
+  once with this change the Board uses the 20-game table.
+- **NBA Board**: Rank by "Hit chance" (new default). Price bands and sort orders are unchanged.
+  Rows carry `hitChance`; tracked picks store `hitProb`.
+- **Model Report**: scores the hit chance on every saved NBA rung next to Kalshi and the Model, and
+  makes the 66-75% and coin-flip lists with it too. Point-in-time scoring cuts the `history` block to games before the date.
+- **NFL hit chance** (same file): Proj after a second pass over the player's last 10 games (how
+  often he cleared the number) and last-game volume against his season average. Walk-forward on
+  2023-2026 it is used only where players with a regular role improved: passing yards (lower log
+  loss in all 4 seasons; 2026 0.5189 to 0.5098), rush attempts (all 4; 2026 0.4869 to 0.4773) and
+  rushing yards (3 of 4, small), and receptions. Receptions were about even for regular players
+  overall but fix a specific error: where Proj sat 15+ points above how often the player had
+  actually cleared the number, Proj said 48.4% and 44.5% hit; the hit chance says 45.0%.
+  Receiving yards showed no gain (and over-corrects that case) and stay on Proj.
+  16 games did no better than the 10 the weekly logs keep, so the NFL data job is unchanged.
+  The NFL Board ranks by it by default (Rank by: Hit chance); price bands are unchanged.
+- Checked and left alone: the NBA matchup factor (helps slightly in 2024-25 and 2025-26) and NFL
+  Proj calibration (within about 1.5 points by stat and side; rush-attempt Overs under-stated).
+- **+EV list** (a second list next to the coin-flip band, which stays): price band option "+EV" on
+  both Boards keeps sides priced 30-65% at the ask whose EV is 3% or more per dollar after
+  Kalshi's taker fee, ranked by EV. The chance used for EV is the Kalshi mid moved part of the
+  way (log-odds) toward the app's estimate (`blendWithPrice`), because the price has been the
+  more accurate number. The weight starts at 0.30 and is refit per sport from graded Kalshi
+  slates whenever the Model Report is opened (`fitPriceWeight`; pulled toward 0.30 until about
+  1,000 player-nights are graded, kept within 0-0.6, saved to `corrections/ev-weight.json`).
+  Rows carry `ev`, `evRaw` and `fair`. The Model Report grades the blended list and the
+  raw-estimate list side by side and shows the current weights.
+- After review round 6: EV no longer uses the raw estimate (it overstated EV where the app was
+  most likely wrong); the cutoff for the blended list moved from 15 to 25 points (on real prices
+  the 25+ cases were role changes the logs had not caught up with); the NBA Board says so
+  when Proj cannot run for points and 3-pointers (no shot data in the logs). Checked and kept:
+  the points spread and the logistic are not one correction counted twice (with the widening
+  removed the logit coefficient is 0.73, with it 0.81). Receptions stays on, noting the average
+  gain is nil and it targets one situation (Proj well above the player's own record).
+- Not shown: that any of this beats the market price. The price is still the most accurate number.

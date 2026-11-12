@@ -112,4 +112,16 @@ assert.ok(Math.abs(fs2.fees - 0.04) < 0.006, String(fs2.fees));        // 2 take
 assert.ok(Math.abs(fs2.unitsAfterFees - (fs2.units - 0.035)) < 0.011);
 assert.equal(fs2.clv.n, 2); assert.equal(fs2.clv.stale, 1);
 assert.ok(Math.abs(fs2.clv.execution - (-0.045)) < 1e-9 && Math.abs(fs2.clv.movement - (-0.045)) < 1e-9);
+// --- Proj vs Model on graded picks
+{
+  const { compareEstimates } = await import("../src/tracker.js");
+  const e = (result, modelProb, projProb, rankedBy, odds = -200) => ({ result, modelProb, projProb, rankedBy, odds });
+  const c = compareEstimates([e("HIT", 0.8, 0.7, "proj"), e("MISS", 0.8, 0.6, "proj"), e("HIT", 0.75, 0.72, "model"), e("PUSH", 0.7, 0.7, "proj"),
+    e("HIT", "", "", "model"), e(null, 0.7, 0.7, "proj")]);
+  assert.equal(c.n, 3); assert.ok(Math.abs(c.hitRate - 2 / 3) < 1e-9);
+  assert.ok(Math.abs(c.brierModel - ((0.2 ** 2 + 0.8 ** 2 + 0.25 ** 2) / 3)) < 1e-9);
+  assert.ok(Math.abs(c.brierProj - ((0.3 ** 2 + 0.6 ** 2 + 0.28 ** 2) / 3)) < 1e-9);
+  assert.equal(c.rankedByProj.record, "1-1"); assert.equal(c.rankedByModel.record, "2-0");
+  assert.equal(c.rankedByProj.units, -0.5); assert.equal(c.rankedByModel.units, 1);
+}
 console.log("tracker tests passed");

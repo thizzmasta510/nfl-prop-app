@@ -188,6 +188,11 @@ export const PRIOR_RATE_DISPERSION = { points: 2.2, pra: 2.6, pr: 2.4, pa: 2.4, 
   threes: 1.3, steals: 1.1, blocks: 1.25, stocks: 1.2, turnovers: 1.15 };
 // Low-count stats: 20 games say little about their dispersion, so the prior counts for more.
 const DISP_PSEUDO = { threes: 15, steals: 15, blocks: 15, stocks: 15, turnovers: 15 };
+// Points only: the spread built below is about 20% too narrow. Over three seasons
+// (2024-25 to 2026-27, walk-forward) a stated 90-95% on points hit 88%, and Unders were
+// off the same way; x1.2 was the best multiplier in each season, while rebounds, assists
+// and 3-pointers were best at x1.0 (backtest/nba_hit_chance_backtest.mjs).
+export const SPREAD_ADJ = { points: 1.2 };
 const PRIOR_MIN_SD = 4.5, MIN_PSEUDO = 5;   // typical game-to-game minutes spread (minutes), prior worth 5 games
 
 /**
@@ -232,7 +237,7 @@ export function nbaProjection(games, factor = 1, stat = null) {
     const mVar = recent.length > 1 ? mss / (recent.length - 1) : PRIOR_MIN_SD ** 2;
     const minVar = (recent.length * mVar + MIN_PSEUDO * PRIOR_MIN_SD ** 2) / (recent.length + MIN_PSEUDO);
     const mean = Math.max(0.05, rate * minutes * factor);
-    const variance = mean * dRate * (1 + 1 / effN(k, 0.9)) + (rate * factor) ** 2 * minVar;
+    const variance = (mean * dRate * (1 + 1 / effN(k, 0.9)) + (rate * factor) ** 2 * minVar) * (SPREAD_ADJ[stat] ?? 1);
     const disp = Math.min(10, Math.max(1.02, variance / mean));
     return { mean, dispersion: disp, n, minutes, minutesSd: Math.sqrt(minVar), rateDispersion: dRate };
   }

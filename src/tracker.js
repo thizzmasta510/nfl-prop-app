@@ -241,5 +241,36 @@ export function picksSummary(entries) {
   }
   const key = (e) => String(e.gameDate || "") || `w${String(e.week || "").padStart(2, "0")}`;
   out.sort((a, b2) => key(b2).localeCompare(key(a)) || String(b2.createdAt || "").localeCompare(String(a.createdAt || "")));
-  return { entries: out, summary: { all: finish(b.all), nfl: finish(b.nfl), nba: finish(b.nba) } };
+  const sum = { all: finish(b.all), nfl: finish(b.nfl), nba: finish(b.nba) };
+  for (const k of ["all", "nfl", "nba"]) sum[k].compare = compareEstimates(out.filter((e) => k === "all" || (String(e.sport || "nfl") === "nba" ? "nba" : "nfl") === k));
+  return { entries: out, summary: sum };
+}
+
+/**
+ * Projection vs old model on your own graded picks (HIT / MISS, tracked from a Board with
+ * both estimates saved): how often each was right on average (Brier, lower is better),
+ * what each said vs what hit, and the record of picks ranked by each.
+ */
+export function compareEstimates(entries) {
+  const both = { n: 0, hits: 0, model: 0, proj: 0, brierModel: 0, brierProj: 0 };
+  const by = { proj: { hits: 0, misses: 0, profit: 0, priced: 0 }, model: { hits: 0, misses: 0, profit: 0, priced: 0 } };
+  for (const e of entries) {
+    const r = e.result; if (r !== "HIT" && r !== "MISS") continue;
+    const y = r === "HIT" ? 1 : 0;
+    const pm = Number(e.modelProb), pp = Number(e.projProb);
+    if (e.modelProb !== "" && e.projProb !== "" && e.modelProb != null && e.projProb != null && Number.isFinite(pm) && Number.isFinite(pp)) {
+      both.n++; both.hits += y; both.model += pm; both.proj += pp; both.brierModel += (pm - y) ** 2; both.brierProj += (pp - y) ** 2;
+    }
+    const rk = e.rankedBy === "proj" ? "proj" : e.rankedBy === "model" ? "model" : null;
+    if (!rk) continue;
+    const x = by[rk]; if (y) x.hits++; else x.misses++;
+    const p = oddsProfit(e.odds); if (p !== null) { x.priced++; x.profit += y ? p : -1; }
+  }
+  const fin = (x) => ({ record: `${x.hits}-${x.misses}`, hitRate: x.hits + x.misses ? x.hits / (x.hits + x.misses) : null, units: Math.round(x.profit * 100) / 100 });
+  return {
+    n: both.n, hitRate: both.n ? both.hits / both.n : null,
+    modelSaid: both.n ? both.model / both.n : null, projSaid: both.n ? both.proj / both.n : null,
+    brierModel: both.n ? both.brierModel / both.n : null, brierProj: both.n ? both.brierProj / both.n : null,
+    rankedByProj: fin(by.proj), rankedByModel: fin(by.model),
+  };
 }

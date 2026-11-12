@@ -19,6 +19,7 @@
  */
 import fs from "node:fs";
 import { scoreProp, normalizeName } from "../src/model.js";
+import { warnIfInGame } from "./sgo_check.mjs";
 
 const args = process.argv.slice(2);
 const arg = (n, f = null) => { const i = args.indexOf(`--${n}`); return i >= 0 && args[i + 1] ? args[i + 1] : f; };
@@ -38,6 +39,7 @@ const MAP = {
 };
 
 const props = JSON.parse(fs.readFileSync(PROPS, "utf8")).rows;
+warnIfInGame(props);   // 2025 closes are often in-game lines: see sgo_check.mjs
 const hist = JSON.parse(fs.readFileSync(HIST, "utf8")).players;
 
 // ---- index history: norm|season -> rows sorted by week

@@ -34,3 +34,8 @@ sgo_*raw*.json
 *.key
 backtest/market_vs_model_rows.json
 nba-history.json
+
+# Kalshi vs books backtest: row data and cache contain licensed sportsbook odds. Keep local.
+backtest/kvb_rows.json
+backtest/kvb_cache.json
+backtest/nba_box.json

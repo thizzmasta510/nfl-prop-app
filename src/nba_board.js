@@ -16,6 +16,8 @@ import { normalizeName } from "./model.js";
 import { gameLogs } from "./trends.js";
 import { nbaProjection, probAtLeast, matchupFactor, nextGame, posGroup } from "./nba_model.js";
 import { injuryFor, teammatesOut, SKIP_STATUSES, PLAY_PROBABILITY } from "./nba_injuries.js";
+import { opportunityLogs, opportunityProjection, efficiencyIndex, currentCorrection, OPP_STATS } from "./nba_opportunity.js";
+import { nbaHitChance, historyIndex } from "./hit_chance.js";
 
 export const KALSHI_NBA_SERIES = { points: "KXNBAPTS", rebounds: "KXNBAREB", assists: "KXNBAAST", threes: "KXNBA3PT" };
 const MONTHS = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6, JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12 };
@@ -108,8 +110,38 @@ export function suggestedLimit(mid, buy) {
   return Math.round(p * 100) / 100;
 }
 
-/** Board order. "edge" = model / price (expected return per dollar), the useful order for plus-money bands. */
+// Expected value of buying one side at the ask, per dollar staked, after Kalshi's taker
+// fee (7% x price x (1 - price) per contract, rounded up to a cent on the whole order).
+//
+// The chance used is not the app's raw estimate. The Kalshi price has been the more
+// accurate number, so the chance starts at the Kalshi mid and moves only part of the
+// way (in log-odds) toward the estimate: blendWithPrice(). The share it moves, the
+// weight, starts at EV_RULES.weight and is refit from the saved Kalshi slates each time
+// the Model Report is opened (fitPriceWeight in src/model_report.js), pulled toward the
+// starting value until about EV_RULES.priorNights player-nights have been graded.
+// 0.30 is a starting guess: the one clean check so far (2026 NFL sportsbook lines)
+// put about 0.16 on Proj, before the hit chance existed.
+export const KALSHI_TAKER_FEE = 0.07;
+// errorGap: an estimate 25+ points above the price is set aside, not listed. On real prices
+// those were players whose role had just changed (a back with 4 games on file priced as the
+// starter): the app is missing news, and blending alone still ranked them first.
+export const EV_RULES = { band: [0.30, 0.65], minEv: 0.03, weight: 0.30, priorNights: 1000, errorGap: 0.25, rawErrorGap: 0.15 };
+const lgt = (p) => { const q = Math.min(0.999, Math.max(0.001, p)); return Math.log(q / (1 - q)); };
+/** The Kalshi mid moved `w` of the way (log-odds) toward the estimate. */
+export function blendWithPrice(estimate, mid, w = EV_RULES.weight) {
+  if (!(estimate >= 0 && estimate <= 1)) return null;
+  if (!(mid > 0 && mid < 1)) return estimate;
+  return 1 / (1 + Math.exp(-(lgt(mid) + w * (lgt(estimate) - lgt(mid)))));
+}
+export function evPerDollar(estimate, price, fee = KALSHI_TAKER_FEE) {
+  if (!(price > 0 && price < 1) || !(estimate >= 0 && estimate <= 1)) return null;
+  return (estimate - price - fee * price * (1 - price)) / price;
+}
+
+/** Board order. "edge" = model / price (expected return per dollar), the useful order for plus-money bands;
+ *  "ev" = expected value after the fee, highest first. */
 export function boardSort(sortBy) {
+  if (sortBy === "ev") return (a, b) => b.ev - a.ev || b.model - a.model;
   if (sortBy === "edge") return (a, b) => b.model / b.market - a.model / a.market || b.model - a.model;
   if (sortBy === "model") return (a, b) => b.model - a.model || b.market - a.market;
   return (a, b) => b.market - a.market || b.model - a.model;
@@ -124,18 +156,25 @@ export function buildNbaBoard(opts) {
   // the price, so minGap requires the model to be that far ABOVE the buy price; errorGap sets
   // aside sides where the model is so far above that it is more likely a data error.
   const minGap = Number.isFinite(opts.minGap) ? opts.minGap : null, errorGap = Number.isFinite(opts.errorGap) ? opts.errorGap : null;
+  const minEv = Number.isFinite(opts.minEv) ? opts.minEv : null;   // EV list: keep a side only at this EV or better
+  const evWeight = Number.isFinite(opts.evWeight) ? opts.evWeight : EV_RULES.weight;
   const dataErrors = [];
-  const sortBy = ["model", "edge"].includes(opts.sortBy) ? opts.sortBy : "market";
+  const sortBy = ["model", "edge", "ev"].includes(opts.sortBy) ? opts.sortBy : "market";
   const onePerPlayer = opts.onePerPlayer !== false;
   const dnpRule = opts.dnpRule === "void" ? "void" : "no";
+  const rankBy = ["hit", "proj"].includes(opts.rankBy) ? opts.rankBy : "model";
   const excluded = { unknownPlayer: 0, inactive: 0, started: 0, notOnSchedule: 0, wideSpread: 0, outOfBand: 0,
-    modelDisagrees: 0, fewGames: 0, injured: 0, duplicateRung: 0, belowMinGap: 0, likelyDataError: 0 };
+    modelDisagrees: 0, fewGames: 0, injured: 0, duplicateRung: 0, belowMinGap: 0, belowMinEv: 0, likelyDataError: 0 };
   const inj = opts.injuries || null;             // injuryIndex(...) or null
   const injuredSkipped = new Map(), notScheduled = new Set();
   const unknown = new Set();
   const logsByStat = {};
   const newestDate = (doc.players || []).reduce((mx, r) => (String(r.date) > mx ? String(r.date) : mx), "");
   const hasSchedule = Array.isArray(doc.upcoming) && doc.upcoming.length > 0;
+  // Opportunity projection (points and threes): built once, only when the logs carry shot data.
+  let oppLogs = null, effIdx = null;
+  const older = historyIndex(doc, normalizeName);   // games 21-40 per player, when the data job provides them
+  const oppCache = new Map(), oppCorr = {};
 
   let rows = [];
   for (const mk of markets) {
@@ -170,6 +209,23 @@ export function buildNbaBoard(opts) {
     const proj = nbaProjection(p.games, ng ? mf.factor : 1, mk.stat);
     if (!proj) { excluded.fewGames++; continue; }
     const pOverIfPlays = probAtLeast(mk.strike, proj.mean, proj.dispersion);
+    let opp = null;
+    if (OPP_STATS.includes(mk.stat)) {
+      if (!oppLogs) { oppLogs = opportunityLogs(doc.players || []); effIdx = efficiencyIndex(doc); }
+      const ck = `${p.norm}|${mk.stat}|${mf.factor}`;
+      if (!oppCache.has(ck)) {
+        const og = oppLogs.get(p.norm);
+        oppCorr[mk.stat] ||= currentCorrection(oppLogs, mk.stat);
+        oppCache.set(ck, og ? opportunityProjection(og.games, mk.stat, ng ? mf.factor : 1, { totals: effIdx.get(p.norm) || null, scoringAdj: oppCorr[mk.stat].factor }) : null);
+      }
+      opp = oppCache.get(ck);
+    }
+    const oppOverIfPlays = opp ? probAtLeast(mk.strike, opp.mean, opp.dispersion) : null;
+    // Hit chance: the estimate above (Proj where it exists) after the second pass over
+    // his longer record and last-game minutes (src/hit_chance.js).
+    const og40 = older.get(p.norm) || [];
+    const hc = nbaHitChance(mk.stat, { pOver: oppOverIfPlays ?? pOverIfPlays, strike: mk.strike, modelMean: proj.mean, projMinutes: proj.minutes, factor: ng ? mf.factor : 1,
+      games: p.games.slice(0, 20).map((g) => ({ value: g.value, minutes: g.minutes })).concat(og40.map((g) => ({ value: g[mk.stat], minutes: g.minutes }))) });
     const pPlays = ir ? (PLAY_PROBABILITY[ir.status] ?? 1) : 1;
     const pOver = dnpRule === "no" ? pPlays * pOverIfPlays : pOverIfPlays;
     const gameDate = (ng && ng.date) || mk.date;
@@ -180,15 +236,24 @@ export function buildNbaBoard(opts) {
       matchupCapped: !!mf.capped,
     };
     const last10 = p.games.slice(0, 10).map((g) => g.value);
+    // rankBy "proj": the opportunity projection decides (filters, gap, sort) where it exists
+    // (points, 3-pointers); the current model stays on every row as modelCurrent.
+    const projOver = opp ? (dnpRule === "no" ? pPlays * oppOverIfPlays : oppOverIfPlays) : null;
+    const hitOver = hc ? (dnpRule === "no" ? pPlays * hc.pOver : hc.pOver) : null;
+    const useHit = rankBy === "hit" && hitOver !== null;
+    const useProj = !useHit && rankBy !== "model" && projOver !== null;
     const sides = [
-      { side: "Over", mid: mk.mid, buy: mk.ask, model: pOver, hits: last10.filter((v) => v >= mk.strike).length },
-      { side: "Under", mid: 1 - mk.mid, buy: mk.bid !== null ? 1 - mk.bid : null, model: 1 - pOver, hits: last10.filter((v) => v < mk.strike).length },
+      { side: "Over", mid: mk.mid, buy: mk.ask, cur: pOver, proj: projOver, hit: hitOver, hits: last10.filter((v) => v >= mk.strike).length },
+      { side: "Under", mid: 1 - mk.mid, buy: mk.bid !== null ? 1 - mk.bid : null, cur: 1 - pOver, proj: projOver === null ? null : 1 - projOver, hit: hitOver === null ? null : 1 - hitOver, hits: last10.filter((v) => v < mk.strike).length },
     ];
+    for (const s of sides) s.model = useHit ? s.hit : useProj ? s.proj : s.cur;
     for (const s of sides) {
       const price = s.buy !== null && s.buy > 0 && s.buy < 1 ? s.buy : s.mid;   // what you can actually get
       if (price < lo || price > hi) { excluded.outOfBand++; continue; }
       if (s.model < price - disagree) { excluded.modelDisagrees++; continue; }
       if (minGap !== null && s.model < price + minGap) { excluded.belowMinGap++; continue; }
+      const fair = blendWithPrice(s.model, s.mid, evWeight), ev = evPerDollar(fair, price);
+      if (minEv !== null && !(ev >= minEv)) { excluded.belowMinEv++; continue; }
       if (errorGap !== null && s.model - price > errorGap) { excluded.likelyDataError++; dataErrors.push({ player: p.name, side: s.side, line: mk.strike - 0.5, stat: mk.stat, model: s.model, market: price }); continue; }
       const O = ng && ctx && ctx.teams[ng.opp];
       const grp = posGroup(p.position);
@@ -203,7 +268,9 @@ export function buildNbaBoard(opts) {
         side: s.side, line: mk.strike - 0.5, rung: `${mk.strike}+`,
         market: price, mid: s.mid, buy: s.buy, priceBasis: price === s.buy ? "buy" : "mid",
         spread: mk.spread, limit: suggestedLimit(s.mid, s.buy),
-        model: s.model, modelIfPlays: s.side === "Over" ? pOverIfPlays : 1 - pOverIfPlays, pPlays,
+        model: s.model, modelCurrent: s.cur, modelProj: s.proj, hitChance: s.hit, ev, evRaw: evPerDollar(s.model, price), fair, rankedBy: useHit ? "hit" : useProj ? "proj" : "model",
+        hit: hc ? { games: hc.games, share: s.side === "Over" ? hc.share : 1 - hc.share, lastMin: hc.lastMin } : null,
+        modelIfPlays: s.side === "Over" ? pOverIfPlays : 1 - pOverIfPlays, pPlays,
         gap: s.model - price,
         caution: s.model - price > 0.10 ? "model far above market: more likely model error than value" : null,
         injury: ir ? { status: ir.status, reason: ir.reason } : null,
@@ -211,6 +278,14 @@ export function buildNbaBoard(opts) {
         reportPending: inj ? inj.notSubmitted.has(p.team) : false,
         flags,
         projection: proj.mean, minutes: proj.minutes, minutesSd: proj.minutesSd,
+        // Opportunity projection: shots x regressed efficiency. Shown next to the model,
+        // not used to pick or filter (see backtest/nba_opportunity_backtest.mjs).
+        opportunity: opp ? {
+          mean: opp.mean, floor: opp.floor, median: opp.median, ceiling: opp.ceiling,
+          model: s.proj,
+          volumePerMin: opp.volumePerMin, efficiency: opp.efficiency, efficiencyRaw: opp.efficiencyRaw,
+          flag: opp.volume.flag, note: opp.volume.note, scoringAdj: opp.scoringAdj,
+        } : null,
         last10, last10Record: `${s.hits} of ${last10.length}`,
         game: ng ? { opp: ng.opp, home: ng.home, tip: ng.tip, date: ng.date } : { date: mk.date },
         context: {
@@ -239,8 +314,11 @@ export function buildNbaBoard(opts) {
   for (const r of rows) r.sameGameRows = perPlayer[r.norm] - 1;
   rows.sort(boardSort(sortBy));
   return {
-    band: [lo, hi], priceBasis: "buy price (mid when there is no quote)", sortBy, dnpRule,
-    count: rows.length, excluded, unknownPlayers: [...unknown].slice(0, 25), minGap, dataErrors: dataErrors.slice(0, 15),
+    band: [lo, hi], priceBasis: "buy price (mid when there is no quote)", sortBy, dnpRule, rankBy,
+    scoringCorrection: oppCorr.points || null,
+    count: rows.length, excluded, unknownPlayers: [...unknown].slice(0, 25), minGap, minEv, evWeight,
+    // points / 3-pointers asked for but the logs carry no shot data: Proj cannot run and the hit chance starts from the Model
+    projMissing: oppLogs !== null && oppLogs.size === 0, dataErrors: dataErrors.slice(0, 15),
     injuredSkipped: [...injuredSkipped].slice(0, 25).map(([name, status]) => ({ name, status })),
     notOnSchedule: [...notScheduled].slice(0, 25),
     injuries: inj ? inj.meta : null,

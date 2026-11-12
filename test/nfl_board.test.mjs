@@ -63,4 +63,19 @@ for (const r of lp.rows) { assert.ok(r.market >= 0.17 && r.market <= 0.45); asse
 for (let i = 1; i < lp.rows.length; i++) assert.ok(lp.rows[i - 1].model / lp.rows[i - 1].market >= lp.rows[i].model / lp.rows[i].market - 1e-9);
 const lp0 = buildNflBoard({ markets, trend, weekly, nowMs: now, band: [0.17, 0.45], onePerPlayer: false });
 assert.ok(lp0.rows.length >= lp.rows.length && lp.excluded.belowMinGap === lp0.rows.length - lp.rows.length - lp.excluded.likelyDataError + lp0.excluded.likelyDataError);
+
+// --- Rank by Proj: the projection filters and ranks where it exists; Model stays on the row
+{
+  const withVol = { ...trend, players: trend.players.map((r) => r.name === "Steady Back" ? { ...r, stats: { ...r.stats, carries: 18, targets: 3 } } : r) };
+  const m = buildNflBoard({ markets, trend: withVol, weekly, nowMs: now, band: [0.5, 0.97], onePerPlayer: false });
+  const pj = buildNflBoard({ markets, trend: withVol, weekly, nowMs: now, band: [0.5, 0.97], onePerPlayer: false, rankBy: "proj" });
+  assert.equal(m.rankBy, "model"); assert.equal(pj.rankBy, "proj");
+  const sb = pj.rows.filter((r) => r.player === "Steady Back");
+  assert.ok(sb.length > 0);
+  for (const r of sb) { assert.equal(r.rankedBy, "proj"); assert.equal(r.model, r.modelProj); assert.ok(Number.isFinite(r.modelCurrent)); assert.equal(r.opportunity.model, r.modelProj); }
+  for (const r of m.rows) { assert.equal(r.rankedBy, "model"); assert.equal(r.model, r.modelCurrent); }
+  // a market without volume data (Rookie Wr has no targets) falls back to Model even when ranking by Proj
+  for (const r of pj.rows.filter((x) => x.player === "Rookie Wr")) { assert.equal(r.rankedBy, "model"); assert.equal(r.modelProj, null); }
+  for (let i = 1; i < pj.rows.length; i++) assert.ok(pj.rows[i - 1].model >= pj.rows[i].model - 1e-12);   // sorted by the ranking estimate
+}
 console.log("nfl board tests passed");

@@ -42,6 +42,16 @@ jobs:
           if [ -f nba-injury-history.json ]; then mv nba-injury-history.json ../; fi
         timeout-minutes: 10
 
+      # Straight into the app's storage (needed once the repo is private; skipped without the secrets).
+      - name: Upload to Cloudflare R2
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+        continue-on-error: true
+        run: bash github-action/upload_r2.sh nba-injuries.json nba-injuries.json --stamp
+
       - name: Commit and push results
         run: |
           git config user.name "github-actions[bot]"

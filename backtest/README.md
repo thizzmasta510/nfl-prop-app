@@ -89,3 +89,65 @@ signal. Recency weighting only earns its place if player form and role actually
 drift within a season. Whether they drift enough to justify it is exactly the
 question real data will answer, and it is a real possibility that the honest
 answer is no.
+
+## NBA opportunity projection (`nba_opportunity_backtest.mjs`)
+
+Tests `src/nba_opportunity.js` (points and 3-pointers built from shot volume and
+regressed efficiency) against the current NBA model, walk-forward with no
+lookahead, on public hoopR box scores:
+
+```
+git clone --depth 1 --filter=blob:none --sparse https://github.com/sportsdataverse/hoopR-nba-data
+cd hoopR-nba-data && git sparse-checkout set nba/player_box/parquet && cd ..
+node backtest/hoopr_box.mjs hoopR-nba-data/nba/player_box/parquet/player_box_2025.parquet hoopR-nba-data/nba/player_box/parquet/player_box_2026.parquet hoopR-nba-data/nba/player_box/parquet/player_box_2027.parquet --out backtest/nba_box.json
+node backtest/nba_opportunity_backtest.mjs backtest/nba_box.json --history 20
+```
+
+`--history 20` matches what the app keeps per player; leave it off to use up to 82
+games. `--kalshi rows.txt --kalshi-date YYYY-MM-DD` also scores a saved night of
+Kalshi rungs against the market's own mid. `nba-history.json` from the data job
+works too once it carries shot data (runs after this update).
+
+## NFL opportunity projection (`nfl_opportunity_backtest.mjs`)
+
+Grades `src/nfl_opportunity.js` against the current NFL model and the books' closing
+lines (same join as `market_vs_model.mjs`):
+
+```
+node backtest/nfl_opportunity_backtest.mjs --props ..\sgo_backfill.json --history backtest/player-stats-history.json --logs trend-logs.json --season 2026
+```
+
+**Warning about the 2025 backfill:** about a third of 2025 receiving-yard "closing" lines
+sit within 3 yards of the final result (pregame lines: about 1 in 10, which is what the
+2026 rows show), and some carry odds like +900 / -1700. Those are in-game lines, so the
+2025 "market" looks far better than it was. The script prints this check; grade 2026
+only (`--season 2026`) until the 2025 closes are re-pulled as pregame lines. Earlier
+results built on the 2025 closes (model vs market, band ROI) need the same re-check.
+
+## NBA hit chance (`nba_hit_chance_backtest.mjs`)
+
+Fits and tests `src/hit_chance.js` and the points-spread multiplier, walk-forward by season,
+through the app's own projection, matchup and feature code.
+
+```
+node backtest/hoopr_box.mjs <parquet 2024> <parquet 2025> <parquet 2026> <parquet 2027> --out backtest/nba_box.json
+node backtest/nba_hit_chance_backtest.mjs backtest/nba_box.json --spread          # report
+node backtest/nba_hit_chance_backtest.mjs backtest/nba_box.json --check           # fails if HIT_COEF is stale
+```
+
+The first season in the file is history only. Prints log loss before and after per stat and test
+season for the 20-game and 40-game tables, calibration of the result by side, the coefficients fit
+on all graded seasons (paste into `HIT_COEF`, then update `test/hit_chance.test.mjs`), and with
+`--spread` the log loss by spread multiplier (the `SPREAD_ADJ` check). It cannot say anything about
+prices: there are no market lines in it.
+
+## NFL hit chance (`nfl_hit_chance_backtest.mjs`)
+
+```
+node backtest/nfl_hit_chance_backtest.mjs --history backtest/player-stats-history.json --logs trend-logs.json
+```
+
+Walk-forward by season through the app's own Proj and `nflHitFeatures()`. Prints log loss before
+and after for all players and for players with a regular role, calibration, and the coefficients
+for all five markets; the app pins only the markets where regular players improved
+(`NFL_HIT_COEF`: receptions, passing yards, rush attempts, rushing yards; see the notes in `src/hit_chance.js`). `--check` fails if those are stale.

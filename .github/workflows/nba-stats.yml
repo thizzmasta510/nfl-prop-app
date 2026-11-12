@@ -29,6 +29,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests nba_api pandas
 
+      - name: Test the log parser (shot attempts, free throws, rebounds split)
+        run: cd github-action && python test_nba_logs.py
+
       # Tries cdn.nba.com first (box scores), then stats.nba.com. Exits non-zero
       # (and writes nothing) if both fail, so a failed run never replaces good data.
       - name: Compute NBA game logs
@@ -50,6 +53,17 @@ jobs:
           name: nba-history
           path: nba-history.json
           retention-days: 7
+
+      # Straight into the app's storage (needed once the repo is private; skipped without the secrets).
+      - name: Upload to Cloudflare R2
+        if: ${{ !inputs.history }}
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+        continue-on-error: true
+        run: bash github-action/upload_r2.sh nba-trend-logs.json nba-trend-logs.json
 
       - name: Commit and push results
         if: ${{ !inputs.history }}

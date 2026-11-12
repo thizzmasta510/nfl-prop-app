@@ -33,6 +33,9 @@ from datetime import datetime, timedelta, timezone
 from compute_player_stats import normalize_name, short_key
 
 KEEP_GAMES = 20
+# Box scores are fetched this deep per team; games 21-40 of each player go into the compact
+# `history` block (minutes and the four Board stats) for the hit chance (src/hit_chance.js).
+HISTORY_GAMES = 40
 # --all: every regular-season game of both seasons (no 20-game trim, no early stop),
 # for point-in-time backtests. Written to --out (default nba-history.json); not
 # meant to be published for the Worker.
@@ -87,7 +90,7 @@ CDN_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
     "Referer": "https://www.nba.com/", "Origin": "https://www.nba.com", "Accept": "application/json",
 }
-MAX_BOX_PER_SEASON = 450   # enough for every team's last 20+ games; keeps a run to a few minutes
+MAX_BOX_PER_SEASON = 750   # enough for every team's last 40+ games (HISTORY_GAMES); a run takes several minutes
 
 
 def iso_minutes(v):
@@ -119,7 +122,12 @@ def box_rows(box, season_start):
             pts, reb, ast = num(st.get("points")), num(st.get("reboundsTotal")), num(st.get("assists"))
             stl, blk = num(st.get("steals")), num(st.get("blocks"))
             stats = {"points": pts, "rebounds": reb, "assists": ast, "threes": num(st.get("threePointersMade")),
-                     "steals": stl, "blocks": blk, "turnovers": num(st.get("turnovers")), "minutes": mins}
+                     "steals": stl, "blocks": blk, "turnovers": num(st.get("turnovers")), "minutes": mins,
+                     # Opportunity stats for the NBA opportunity projection (src/nba_opportunity.js).
+                     "fga": num(st.get("fieldGoalsAttempted")), "fgm": num(st.get("fieldGoalsMade")),
+                     "fg3a": num(st.get("threePointersAttempted")), "fta": num(st.get("freeThrowsAttempted")),
+                     "ftm": num(st.get("freeThrowsMade")), "oreb": num(st.get("reboundsOffensive")),
+                     "dreb": num(st.get("reboundsDefensive"))}
             if None not in (pts, reb, ast):
                 stats.update(pra=pts + reb + ast, pr=pts + reb, pa=pts + ast, ra=reb + ast)
             if None not in (stl, blk):
@@ -235,7 +243,7 @@ def from_cdn(session=None, sleep=0.3, now=None):
     def collect(id_list, season_start, label):
         per_team, got, fails = {}, 0, 0
         for gid in (id_list if FULL else id_list[:MAX_BOX_PER_SEASON]):
-            if not FULL and per_team and len(per_team) >= 30 and min(per_team.values()) >= KEEP_GAMES + 2:
+            if not FULL and per_team and len(per_team) >= 30 and min(per_team.values()) >= HISTORY_GAMES + 2:
                 break
             try:
                 r = get(f"{CDN}/liveData/boxscore/boxscore_{gid}.json")
@@ -263,7 +271,7 @@ def from_cdn(session=None, sleep=0.3, now=None):
         return per_team
 
     cur_teams = collect([g for _, g in ids], cur_start, f"{cur_start}-{str(cur_start + 1)[-2:]}")
-    if not FULL and len(cur_teams) >= 30 and min(cur_teams.values()) >= KEEP_GAMES:
+    if not FULL and len(cur_teams) >= 30 and min(cur_teams.values()) >= HISTORY_GAMES:
         return rows, tgames, upcoming  # every team already has a full window this season
     # Previous season, newest game first (regular-season ids are 002YY00001..002YY01230).
     prev = cur_start - 1
@@ -304,6 +312,59 @@ def _made_att(v):
         return None, None
 
 
+def efficiency_totals(rows, cap=82):
+    """Shooting totals per player name over his newest `cap` games with shot data, for the
+    opportunity projection's efficiency (it needs more than the 20 games kept per player).
+    Only completed games are fetched, so every game here is before the games being projected."""
+    eff = {}
+    for r in sorted(rows, key=lambda x: x["date"], reverse=True):
+        s = r.get("stats") or {}
+        if s.get("fga") is None or s.get("fta") is None or s.get("fg3a") is None or not s.get("minutes"):
+            continue
+        e = eff.setdefault(r["name"], {"games": 0, "pts": 0, "fga": 0, "fta": 0, "fg3m": 0, "fg3a": 0})
+        if e["games"] >= cap:
+            continue
+        e["games"] += 1
+        e["pts"] += s.get("points") or 0
+        e["fga"] += s["fga"]
+        e["fta"] += s["fta"]
+        e["fg3m"] += s.get("threes") or 0
+        e["fg3a"] += s["fg3a"]
+    return eff
+
+
+def history_games(rows, keep=KEEP_GAMES, cap=HISTORY_GAMES):
+    """Each player's games keep+1..cap (newest first, games he played in), as parallel lists per
+    name: dates, minutes, points, rebounds, assists, threes. The first `keep` games are the
+    full rows in `players`; these older ones only feed the hit chance's 40-game record."""
+    seen, out = {}, {}
+    for r in sorted(rows, key=lambda x: x["date"], reverse=True):
+        s = r.get("stats") or {}
+        n = seen.get(r["playerId"], 0)
+        seen[r["playerId"]] = n + 1
+        if n < keep or n >= cap or not s.get("minutes"):
+            continue
+        h = out.setdefault(r["name"], {"dates": [], "minutes": [], "points": [], "rebounds": [], "assists": [], "threes": []})
+        h["dates"].append(r["date"])
+        h["minutes"].append(s["minutes"])
+        for k in ("points", "rebounds", "assists", "threes"):
+            h[k].append(s.get(k) or 0)
+    return out
+
+
+NBA_TEAMS = {"ATL", "BOS", "BKN", "CHA", "CHI", "CLE", "DAL", "DEN", "DET", "GSW", "HOU", "IND", "LAC", "LAL", "MEM",
+             "MIA", "MIL", "MIN", "NOP", "NYK", "OKC", "ORL", "PHI", "PHX", "POR", "SAC", "SAS", "TOR", "UTA", "WAS"}
+
+
+def is_nba_game(ev):
+    """False for All-Star weekend events, which ESPN lists as regular season and whose
+    team codes change every year (2025: CHK, KEN, SHQ, CAN; 2026: STARS, STRIPES, WORLD).
+    Both teams must be one of the 30 NBA teams."""
+    comps = ((ev.get("competitions") or [{}])[0].get("competitors") or [])
+    abbrs = [ESPN_TEAM.get(a, a) for a in (((c.get("team") or {}).get("abbreviation") or "") for c in comps)]
+    return len(abbrs) == 2 and all(a in NBA_TEAMS for a in abbrs)
+
+
 def espn_box(summary, event, season_start):
     """ESPN game summary -> (player rows, team-game rows) in the same shape as the cdn path."""
     _, date = _et_date(event.get("date"))
@@ -334,14 +395,16 @@ def espn_box(summary, event, season_start):
             pts, reb, ast = num(g("points")), num(g("rebounds")), num(g("assists"))
             stl, blk, tov = num(g("steals")), num(g("blocks")), num(g("turnovers"))
             fgm, fga = _made_att(g("fieldGoalsMade-fieldGoalsAttempted"))
-            tpm, _ = _made_att(g("threePointFieldGoalsMade-threePointFieldGoalsAttempted"))
-            _, fta = _made_att(g("freeThrowsMade-freeThrowsAttempted"))
+            tpm, tpa = _made_att(g("threePointFieldGoalsMade-threePointFieldGoalsAttempted"))
+            ftm, fta = _made_att(g("freeThrowsMade-freeThrowsAttempted"))
             orb = num(g("offensiveRebounds"))
+            drb = num(g("defensiveRebounds"))
             for k, v in (("pts", pts), ("fga", fga), ("fta", fta), ("orb", orb), ("tov", tov), ("min", mins)):
                 if v is not None:
                     tot[k] += v
             stats = {"points": pts, "rebounds": reb, "assists": ast, "threes": tpm, "steals": stl, "blocks": blk,
-                     "turnovers": tov, "minutes": mins}
+                     "turnovers": tov, "minutes": mins,
+                     "fga": fga, "fgm": fgm, "fg3a": tpa, "fta": fta, "ftm": ftm, "oreb": orb, "dreb": drb}
             if None not in (pts, reb, ast):
                 stats.update(pra=pts + reb + ast, pr=pts + reb, pa=pts + ast, ra=reb + ast)
             if None not in (stl, blk):
@@ -416,11 +479,13 @@ def from_espn(session=None, sleep=0.15, now=None):
         day = start_day
         nonlocal fails
         while day >= stop_day:
-            if not FULL and len(per_team) >= 30 and min(per_team.values()) >= KEEP_GAMES + 2:
+            if not FULL and len(per_team) >= 30 and min(per_team.values()) >= HISTORY_GAMES + 2:
                 break
             for ev in scoreboard(day):
                 st = (ev.get("status") or {}).get("type") or {}
                 if (ev.get("season") or {}).get("type") != 2 or not st.get("completed"):
+                    continue
+                if not is_nba_game(ev):   # All-Star games are tagged regular season too
                     continue
                 try:
                     r = get("summary", event=str(ev.get("id")))
@@ -447,7 +512,7 @@ def from_espn(session=None, sleep=0.15, now=None):
     # Current season: yesterday back to Oct 1; previous season: Apr 20 back to Oct 1.
     cur = walk(today - timedelta(days=0 if now.hour >= 12 else 1), _date(cur_start, 10, 1), cur_start,
                f"{cur_start}-{str(cur_start + 1)[-2:]}")
-    if FULL or not (len(cur) >= 30 and min(cur.values()) >= KEEP_GAMES):
+    if FULL or not (len(cur) >= 30 and min(cur.values()) >= HISTORY_GAMES):
         prev = cur_start - 1
         walk(_date(cur_start, 4, 20), _date(prev, 10, 1), prev, f"{prev}-{str(prev + 1)[-2:]}")
     return rows, tgames, upcoming
@@ -484,7 +549,10 @@ def from_stats_api():
             pts, reb, ast = num(r.get("PTS")), num(r.get("REB")), num(r.get("AST"))
             stl, blk = num(r.get("STL")), num(r.get("BLK"))
             stats = {"points": pts, "rebounds": reb, "assists": ast, "threes": num(r.get("FG3M")),
-                     "steals": stl, "blocks": blk, "turnovers": num(r.get("TOV")), "minutes": minutes(r.get("MIN"))}
+                     "steals": stl, "blocks": blk, "turnovers": num(r.get("TOV")), "minutes": minutes(r.get("MIN")),
+                     "fga": num(r.get("FGA")), "fgm": num(r.get("FGM")), "fg3a": num(r.get("FG3A")),
+                     "fta": num(r.get("FTA")), "ftm": num(r.get("FTM")), "oreb": num(r.get("OREB")),
+                     "dreb": num(r.get("DREB"))}
             if None not in (pts, reb, ast):
                 stats.update(pra=pts + reb + ast, pr=pts + reb, pa=pts + ast, ra=reb + ast)
             if None not in (stl, blk):
@@ -532,6 +600,8 @@ def main():
         if FULL or n < KEEP_GAMES:
             kept.append(r)
             count[r["playerId"]] = n + 1
+    # Season-long shooting totals for the opportunity projection (see efficiency_totals).
+    eff = efficiency_totals(rows)
     out_path = "nba-trend-logs.json"
     if FULL:
         out_path = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else "nba-history.json"
@@ -546,6 +616,8 @@ def main():
         # Empty when the stats.nba.com fallback was used (it has no possession data).
         "teamGames": sorted(tgames, key=lambda x: (x["d"], x["g"], x["t"])),
         "upcoming": upcoming,
+        "efficiency": eff,
+        "history": {} if FULL else history_games(rows),
     }
     with open(out_path, "w") as f:
         json.dump(payload, f, separators=(",", ":"), allow_nan=False)
