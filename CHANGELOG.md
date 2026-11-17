@@ -1088,3 +1088,19 @@ Goal: make the stated chance that a side hits as accurate as possible (not to be
   removed the logit coefficient is 0.73, with it 0.81). Receptions stays on, noting the average
   gain is nil and it targets one situation (Proj well above the player's own record).
 - Not shown: that any of this beats the market price. The price is still the most accurate number.
+
+## NFL defense vs position
+- **Proj now adjusts for the opponent's defense against the player's position**
+  (`src/nfl_defense.js`). For each defense and position group (QB, RB, WR, TE) it compares
+  what earlier opponents actually produced with what Proj expected from them, relative to the
+  league, pulls that toward 1 by the number of games behind it (last season at 0.3), and moves
+  Proj by half of it (square root), capped at 0.80-1.25. Yards markets scale the per-touch
+  rate; receptions and rush attempts scale volume. The hit chance then runs on the adjusted Proj.
+- Walk-forward on 2023-2026 (`backtest/nfl_defense_backtest.mjs`), change in log loss for
+  players with a regular role: passing yards -0.0039 (better in 4 of 4 seasons), rushing yards
+  -0.0030 (3 of 4), rush attempts -0.0017 (3 of 4), receiving yards -0.0010 (3 of 4),
+  receptions -0.0006 (4 of 4). Full strength was worse than half strength in most markets.
+  Through the Board code on 2026 Weeks 5-9: better on four markets, slightly worse on receiving
+  yards (0.4956 to 0.4962), which is the weakest of the five.
+- The Board's Proj tooltip shows the adjustment for each row. The old Model is unchanged (it
+  already used the opponent's overall defensive rank). No market prices in this test.

@@ -151,3 +151,14 @@ Walk-forward by season through the app's own Proj and `nflHitFeatures()`. Prints
 and after for all players and for players with a regular role, calibration, and the coefficients
 for all five markets; the app pins only the markets where regular players improved
 (`NFL_HIT_COEF`: receptions, passing yards, rush attempts, rushing yards; see the notes in `src/hit_chance.js`). `--check` fails if those are stale.
+
+## NFL defense vs position (`nfl_defense_backtest.mjs`)
+
+```
+node backtest/nfl_defense_backtest.mjs --history backtest/player-stats-history.json --games <games.csv> --logs trend-logs.json
+```
+
+`games.csv` is the nflverse schedule file (github.com/nflverse/nfldata, `data/games.csv`); it
+supplies opponents. Walk-forward through the app's own Proj and `nflDefenseTable()` with the
+pinned settings (`NFL_DEF_CFG`). Prints log loss before and after per market and season, for all
+players and for players with a regular role.

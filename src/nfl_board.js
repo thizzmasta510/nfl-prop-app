@@ -11,10 +11,11 @@
 
 import { scoreProp, normalizeName } from "./model.js";
 import { gameLogs } from "./trends.js";
-import { parseKalshiMarket, boardSort, suggestedLimit, evPerDollar, blendWithPrice, EV_RULES } from "./nba_board.js";
+import { parseKalshiMarket, dropBrokenRungs, boardSort, suggestedLimit, evPerDollar, blendWithPrice, EV_RULES } from "./nba_board.js";
 import { impliedTotal } from "./game_script.js";
 
-import { nflOppIndex, nflOpportunityProjection, nflProbAtLeast, nflOppSummary, NFL_OPP_STATS } from "./nfl_opportunity.js";
+import { nflOppIndex, nflOpportunityProjection, nflProbAtLeast, nflOppSummary, nflRole, NFL_OPP_STATS } from "./nfl_opportunity.js";
+import { nflDefenseIndex, nflDefenseOpts } from "./nfl_defense.js";
 import { nflHitChance, nflRecentIndex } from "./hit_chance.js";
 
 export const KALSHI_NFL_SERIES = {
@@ -47,7 +48,8 @@ export function teamInEvent(event, team) {
  *         onePerPlayer = true, maxSpread = 0.14, disagree = 0.10, errorGap = 0.15 }
  */
 export function buildNflBoard(opts) {
-  const { markets, trend } = opts;
+  const { trend } = opts;
+  const markets = dropBrokenRungs(opts.markets);
   const weekly = opts.weekly || {};
   const nowMs = opts.nowMs ?? Date.now();
   const [lo, hi] = opts.band || [0.66, 0.75];
@@ -88,6 +90,7 @@ export function buildNflBoard(opts) {
   let linesMissing = 0;
   let oppIdx = null;   // opportunity projection index, built on first use
   let recentIdx = null; // last games across seasons, for the hit chance
+  let defIdx = null;    // defense vs position table, built on first use
   const curWeek = Math.max(0, ...(trend.players || []).filter((r) => Number(r.season) === season).map((r) => Number(r.week)).filter(Number.isFinite));
 
   let rows = [];
@@ -131,11 +134,13 @@ export function buildNflBoard(opts) {
     if (!Number.isFinite(pOver)) continue;
     // Opportunity projection (volume x regressed efficiency), with the same game-script
     // adjustment applied to volume. Shown next to Model; not used to pick or filter.
-    let oppProj = null, oi = null;
+    let oppProj = null, oi = null, defFactor = 1;
     if (NFL_OPP_STATS.includes(mk.stat)) {
       oppIdx ||= nflOppIndex(trend, normalizeName);
       oi = oppIdx.get(p.norm);
-      oppProj = oi && oi.games.length ? nflOpportunityProjection(oi.games, mk.stat, oi.prev, { volumeAdj: Number(s.gameScriptAdj) || 0 }) : null;
+      // Defense vs position: what this opponent has allowed to his position, against what Proj expected (half strength).
+      if (oi && oi.games.length && opp && opts.defense !== false) { defIdx ||= nflDefenseIndex(trend, normalizeName); defFactor = defIdx.factor(opp, p.norm, nflRole(oi.games, oi.prev), mk.stat); }
+      oppProj = oi && oi.games.length ? nflOpportunityProjection(oi.games, mk.stat, oi.prev, nflDefenseOpts(mk.stat, defFactor, s.gameScriptAdj)) : null;
     }
     const oppOver = oppProj ? nflProbAtLeast(mk.strike, oppProj) : null;
     // rankBy "proj": the opportunity projection decides where it exists; the current model stays as modelCurrent.
@@ -168,7 +173,7 @@ export function buildNflBoard(opts) {
         projection: s.finalProjection, log, logRecord: `${sd.hits} of ${log.length}`,
         prior: prior ?? null, opp, oppDefRank: d ? d.defRank : null,
         teamSpread: teamSpread ?? null, gameTotal: gameTotal ?? null, gameScriptAdj: s.gameScriptAdj,
-        opportunity: nflOppSummary(oppProj, { model: sd.proj }),
+        opportunity: nflOppSummary(oppProj, { model: sd.proj, defense: defFactor }),
         week: game && Number.isFinite(Number(game.week)) ? Number(game.week) : curWeek + 1,
         game: game ? { opp, home: game.home === p.team, kickoff: game.kickoff, date: game.date } : { date: mk.date },
       };

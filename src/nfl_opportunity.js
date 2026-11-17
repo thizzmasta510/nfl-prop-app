@@ -153,6 +153,17 @@ export function nflOpportunityProjection(games, stat, prev = null, opts = {}) {
   if (usePrev) { sv += cfg.prevVolGames * num(prev[sp.vol]) / prev.games; sw += cfg.prevVolGames; }
   let volume = sv / sw * (1 + (opts.volumeAdj || 0));
   if (!(volume > 0)) return null;
+  if (opts.meanOnly) {   // mean and role only (no distribution): cheap, for the defense table
+    let rate0 = 1;
+    if (sp.made) {
+      const pr0 = (priors[role] && priors[role][sp.vol] && priors[role][sp.vol][sp.made]) || priors.REC.targets.receiving_yards;
+      let made0 = g.reduce((a, x) => a + num(x[sp.made]), 0), att0 = g.reduce((a, x) => a + num(x[sp.vol]), 0);
+      if (usePrev) { made0 += cfg.prevEffWeight * num(prev[sp.made]); att0 += cfg.prevEffWeight * num(prev[sp.vol]); }
+      rate0 = (made0 + pr0.k * pr0.rate) / (att0 + pr0.k);
+      if (sp.kind === "binomial") rate0 = Math.min(0.97, Math.max(0.2, rate0));
+    }
+    return { stat, role, mean: volume * rate0 };
+  }
   // volume spread: NB size from his own games, shrunk toward the role prior
   const rPrior = (VOL_SIZE[role] && VOL_SIZE[role][sp.vol]) || 6;
   const vals = g.map((x) => num(x[sp.vol])), m0 = vals.reduce((a, b) => a + b, 0) / vals.length;
@@ -166,7 +177,7 @@ export function nflOpportunityProjection(games, stat, prev = null, opts = {}) {
     let made = g.reduce((a, x) => a + num(x[sp.made]), 0), att = g.reduce((a, x) => a + num(x[sp.vol]), 0);
     if (usePrev) { made += cfg.prevEffWeight * num(prev[sp.made]); att += cfg.prevEffWeight * num(prev[sp.vol]); }
     rateRaw = att > 0 ? made / att : null; sample = att;
-    rate = (made + pr.k * pr.rate) / (att + pr.k);
+    rate = (made + pr.k * pr.rate) / (att + pr.k) * (opts.rateAdj > 0 ? opts.rateAdj : 1);   // rateAdj: opponent-defense multiplier (yards per touch)
     touchVar = pr.var ?? rate * (1 - rate);
     rateVar = touchVar / (pr.k + att);      // posterior uncertainty in his rate
     if (sp.kind === "binomial") rate = Math.min(0.97, Math.max(0.2, rate));

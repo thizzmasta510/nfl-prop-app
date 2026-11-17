@@ -48,6 +48,11 @@ export function parseKalshiMarket(m, stat) {
   const player = t ? t[1] : null;
   if (!player || !Number.isFinite(strike) || strike <= 0) return null;
   const bid = price(m.yes_bid_dollars, m.yes_bid), ask = price(m.yes_ask_dollars, m.yes_ask), last = price(m.last_price_dollars, m.last_price);
+  // Kalshi sets no_bid = 1 - yes_ask and no_ask = 1 - yes_bid. A row where the two sides disagree is a bad read
+  // (the wrong side, or a stale book), so it is set aside rather than priced.
+  const nb = price(m.no_bid_dollars, m.no_bid), na = price(m.no_ask_dollars, m.no_ask);
+  if ((ask !== null && ask > 0 && nb !== null && nb > 0 && Math.abs((1 - nb) - ask) > 0.04) ||
+      (bid !== null && bid > 0 && na !== null && na > 0 && Math.abs((1 - na) - bid) > 0.04)) return null;
   let mid = null;
   if (bid !== null && ask !== null && bid > 0 && ask > 0 && ask < 1 && ask >= bid) mid = (bid + ask) / 2;
   else if (last !== null && last > 0 && last < 1) mid = last;
@@ -56,6 +61,23 @@ export function parseKalshiMarket(m, stat) {
     date: eventDate(m.event_ticker || m.ticker), player, norm: normalizeName(player), stat, strike,
     bid: bid && bid > 0 ? bid : null, ask: ask && ask > 0 && ask < 1 ? ask : null, mid,
     spread: bid && ask && ask >= bid ? ask - bid : null };
+}
+
+/**
+ * A "N+" ladder can only get cheaper as N rises. A higher rung priced above a lower rung of the same
+ * player and stat (by more than 2 cents) means one of the two quotes is wrong, so that rung is dropped.
+ * Works on parsed markets ({ ticker, strike, mid }); the group is the ticker without its strike.
+ */
+export function dropBrokenRungs(markets) {
+  const groups = new Map();
+  for (const m of markets || []) { const k = String(m.ticker).replace(/-[^-]*$/, ""); (groups.get(k) || groups.set(k, []).get(k)).push(m); }
+  const bad = new Set();
+  for (const list of groups.values()) {
+    list.sort((a, b) => a.strike - b.strike);
+    let floor = Infinity;
+    for (const m of list) { if (m.mid > floor + 0.02) bad.add(m); else floor = Math.min(floor, m.mid); }
+  }
+  return (markets || []).filter((m) => !bad.has(m));
 }
 
 function gameOn(doc, team, date) {
@@ -148,7 +170,8 @@ export function boardSort(sortBy) {
 }
 
 export function buildNbaBoard(opts) {
-  const { markets, doc, ctx, season } = opts;
+  const { doc, ctx, season } = opts;
+  const markets = dropBrokenRungs(opts.markets);
   const nowMs = opts.nowMs ?? Date.now();
   const [lo, hi] = opts.band || [0.66, 0.75];
   const maxSpread = opts.maxSpread ?? 0.10, disagree = opts.disagree ?? 0.10, staleDays = opts.staleDays ?? 21;

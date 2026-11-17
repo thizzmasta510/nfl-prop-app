@@ -1124,6 +1124,7 @@ const HTML = `<!doctype html>
   table.tg .bar { height:4px; background:var(--bar-track); border-radius:3px; margin-top:5px; overflow:hidden; }
   table.tg .bar > i { display:block; height:4px; background:var(--bar); border-radius:3px; }
   table.tg th.sorted { color:var(--accent); }
+  table th { cursor:pointer; user-select:none; }
   table.tg td.vals { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:normal; min-width:150px; max-width:220px; }
   .inj { display:inline-block; font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:999px; margin-left:4px; vertical-align:1px;
     color:#9a5b00; background:#fdf0d5; background:color-mix(in srgb, #e8a317 22%, transparent); }
@@ -1720,8 +1721,9 @@ function oppCell(o, line, ranked) {
   const nfl = !!o.volLabel;
   const nflTip = nfl ? " " + (Math.round(o.volume * 10) / 10) + " " + o.volLabel + " a game" +
     (o.rateLabel && o.rateRaw !== null && o.rateRaw !== undefined ? " x " + o.rateLabel + " " + (Math.round(o.rate * 100) / 100) + " (his own " + (Math.round(o.rateRaw * 100) / 100) + ", pulled toward the league for his role)" : "") + "." : "";
+  const def = Number.isFinite(o.defense) && Math.abs(o.defense - 1) >= 0.005 ? " Includes " + (o.defense > 1 ? "+" : "") + (Math.round((o.defense - 1) * 1000) / 10) + "% for this opponent&#39;s defense against his position (what it has allowed against what was projected, at half strength)." : "";
   const adj = o.scoringAdj && o.scoringAdj !== 1 ? " Includes a " + (Math.round((o.scoringAdj - 1) * 1000) / 10) + "% league scoring correction (how projections did over the last two weeks)." : "";
-  const tip = "Mean " + (Math.round(o.mean * 10) / 10) + ". 10th to 90th percentile " + o.floor + " to " + o.ceiling + "." + (nfl ? nflTip : eff) + adj + (o.note ? " " + o.note + "." : "");
+  const tip = "Mean " + (Math.round(o.mean * 10) / 10) + ". 10th to 90th percentile " + o.floor + " to " + o.ceiling + "." + (nfl ? nflTip : eff) + def + adj + (o.note ? " " + o.note + "." : "");
   let h = "<span title='" + esc(tip) + "'><b>" + esc(o.median) + "</b> <span class='hint'>(" + esc(o.floor) + "-" + esc(o.ceiling) + ")</span></span>";
   const pO = o.pOver !== undefined ? o.pOver : null, pU = o.pUnder !== undefined ? o.pUnder : null;
   if (line !== null && line !== undefined && pO !== null) h += " <span class='hint'>" + (pO >= pU ? Math.round(pO * 100) + "% o" : Math.round(pU * 100) + "% u") + "</span>";
@@ -2203,6 +2205,24 @@ document.getElementById("picksWrap").addEventListener("click", async (ev) => {
     await fetch(API + "/api/tracker", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(upd) });
     loadPicks(false);
   }
+});
+
+// Click any column header in a results table to sort it. First click: highest first (A-Z for text). Click again to flip.
+document.addEventListener("click", (ev) => {
+  const th = ev.target && ev.target.closest ? ev.target.closest("table th") : null;
+  if (!th || !th.textContent.trim()) return;
+  const table = th.closest("table"), tr0 = th.parentNode, idx = Array.prototype.indexOf.call(tr0.children, th);
+  const rows = Array.prototype.slice.call(table.querySelectorAll("tr")).filter((r) => r !== tr0 && r.parentNode && !r.querySelector("th") && r.children.length > idx);
+  if (rows.length < 2) return;
+  const val = (r) => { const t = r.children[idx].textContent.replace(/,/g, ""), m = t.match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+  const numeric = rows.filter((r) => val(r) !== null).length >= rows.length / 2;
+  const dir = th.dataset.dir === "desc" ? "asc" : th.dataset.dir === "asc" ? "desc" : (numeric ? "desc" : "asc");
+  Array.prototype.forEach.call(tr0.children, (c) => { delete c.dataset.dir; c.textContent = c.textContent.replace(/ [\u25B2\u25BC]$/, ""); });
+  th.dataset.dir = dir; th.textContent += dir === "desc" ? " \u25BC" : " \u25B2";
+  const sg = dir === "desc" ? -1 : 1;
+  const cmp = numeric ? (a, b) => { const x = val(a), y = val(b); return x === null ? 1 : y === null ? -1 : sg * (x - y); }
+    : (a, b) => sg * a.children[idx].textContent.localeCompare(b.children[idx].textContent);
+  rows.slice().sort(cmp).forEach((r) => r.parentNode.appendChild(r));
 });
 
 </script>
