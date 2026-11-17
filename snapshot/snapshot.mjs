@@ -65,8 +65,14 @@ export async function fetchSgoLeague(league, key, { fetchFn = fetch, maxEvents =
 }
 
 export async function sgoUsage(key, fetchFn = fetch) {
-  try { const r = await fetchFn(`${SGO}/account/usage`, { headers: { "x-api-key": key } }); return { status: r.status, body: (await r.text()).slice(0, 800) }; }
-  catch (e) { return { error: String(e) }; }
+  // Keep only the limits. The raw reply also holds the account email and IDs, which must not be saved.
+  try {
+    const r = await fetchFn(`${SGO}/account/usage`, { headers: { "x-api-key": key } });
+    const text = await r.text(); let j = null; try { j = JSON.parse(text); } catch {}
+    const rl = j && j.data && j.data.rateLimits;
+    return { status: r.status, tier: j && j.data ? j.data.tier : undefined, perMonthEntities: rl && rl["per-month"] ? { max: rl["per-month"]["max-entities"], used: rl["per-month"]["current-entities"] } : undefined,
+      error: r.ok ? undefined : text.slice(0, 200) };
+  } catch (e) { return { error: String(e) }; }
 }
 
 export async function main(argv = process.argv.slice(2), env = process.env, fetchFn = fetch) {

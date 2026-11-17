@@ -1,5 +1,5 @@
 name: Daily price snapshot
-# Saves Kalshi and SportsGameOdds prices each morning (about 11 AM Eastern) to a separate "snapshots" branch.
+# Saves Kalshi prices to a separate "snapshots" branch each morning (about 11 AM Eastern). SportsGameOdds prices go to a private workflow artifact, because this repo is public.
 # It does not touch main, the Worker or any picks. Needs the repository secret SGO_KEY (optional: Kalshi alone works).
 on:
   schedule:
@@ -29,8 +29,16 @@ jobs:
         env:
           SGO_KEY: ${{ secrets.SGO_KEY }}
         run: node snapshot/snapshot.mjs --leagues NBA,NFL --out snapshots
-      - name: Save it
+      - name: Keep the sportsbook prices private (workflow artifact, not the public branch)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sgo-prices-${{ github.run_id }}
+          path: snapshots/**/sgo_*.json
+          retention-days: 90
+          if-no-files-found: ignore
+      - name: Save the Kalshi prices and manifest
         run: |
+          find snapshots -name 'sgo_*.json' -delete
           git config user.name "price-snapshot"
           git config user.email "price-snapshot@users.noreply.github.com"
           git add snapshots snapshot
