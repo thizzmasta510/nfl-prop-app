@@ -1,0 +1,38 @@
+name: Daily price snapshot
+# Saves Kalshi and SportsGameOdds prices each morning (about 11 AM Eastern) to a separate "snapshots" branch.
+# It does not touch main, the Worker or any picks. Needs the repository secret SGO_KEY (optional: Kalshi alone works).
+on:
+  schedule:
+    - cron: "0 16 * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Switch to the snapshots branch
+        run: |
+          git fetch origin snapshots || true
+          if git rev-parse --verify origin/snapshots >/dev/null 2>&1; then
+            git checkout -B snapshots origin/snapshots
+          else
+            git checkout --orphan snapshots
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+          git checkout ${{ github.sha }} -- snapshot/snapshot.mjs
+      - name: Take the snapshot
+        env:
+          SGO_KEY: ${{ secrets.SGO_KEY }}
+        run: node snapshot/snapshot.mjs --leagues NBA,NFL --out snapshots
+      - name: Save it
+        run: |
+          git config user.name "price-snapshot"
+          git config user.email "price-snapshot@users.noreply.github.com"
+          git add snapshots snapshot
+          git commit -m "snapshot $(date -u +%F)" || exit 0
+          git push origin snapshots
