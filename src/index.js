@@ -2214,7 +2214,7 @@ document.addEventListener("click", (ev) => {
   const table = th.closest("table"), tr0 = th.parentNode, idx = Array.prototype.indexOf.call(tr0.children, th);
   const rows = Array.prototype.slice.call(table.querySelectorAll("tr")).filter((r) => r !== tr0 && r.parentNode && !r.querySelector("th") && r.children.length > idx);
   if (rows.length < 2) return;
-  const val = (r) => { const t = r.children[idx].textContent.replace(/,/g, ""), m = t.match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+  const val = (r) => { const t = r.children[idx].textContent.replace(/,/g, ""), m = t.match(/-?[0-9]+([.][0-9]+)?/); return m ? parseFloat(m[0]) : null; };
   const numeric = rows.filter((r) => val(r) !== null).length >= rows.length / 2;
   const dir = th.dataset.dir === "desc" ? "asc" : th.dataset.dir === "asc" ? "desc" : (numeric ? "desc" : "asc");
   Array.prototype.forEach.call(tr0.children, (c) => { delete c.dataset.dir; c.textContent = c.textContent.replace(/ [\u25B2\u25BC]$/, ""); });
