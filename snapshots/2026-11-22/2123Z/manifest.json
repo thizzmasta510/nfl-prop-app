@@ -1,0 +1,70 @@
+{
+ "takenAt": "2026-11-22T21:23:38.446Z",
+ "kalshi": {
+  "KXNBAPTS": {
+   "markets": 321,
+   "pages": 1
+  },
+  "KXNBAREB": {
+   "markets": 355,
+   "pages": 1
+  },
+  "KXNBAAST": {
+   "markets": 258,
+   "pages": 1
+  },
+  "KXNBA3PT": {
+   "markets": 352,
+   "pages": 1
+  },
+  "KXNFLPASSYDS": {
+   "markets": 92,
+   "pages": 1
+  },
+  "KXNFLRSHYDS": {
+   "markets": 265,
+   "pages": 1
+  },
+  "KXNFLRECYDS": {
+   "markets": 964,
+   "pages": 1
+  },
+  "KXNFLREC": {
+   "markets": 459,
+   "pages": 1
+  },
+  "KXNFLRSHATT": {
+   "markets": 51,
+   "pages": 1
+  }
+ },
+ "sgo": {
+  "usageBefore": {
+   "status": 200,
+   "tier": "amateur",
+   "perMonthEntities": {
+    "max": 2500,
+    "used": 140
+   }
+  },
+  "NBA": {
+   "events": 16,
+   "calls": 2,
+   "propOdds": 5244
+  },
+  "NFL": {
+   "events": 4,
+   "calls": 1,
+   "propOdds": 5302
+  },
+  "usageAfter": {
+   "status": 200,
+   "tier": "amateur",
+   "perMonthEntities": {
+    "max": 2500,
+    "used": 160
+   }
+  }
+ },
+ "errors": []
+}
