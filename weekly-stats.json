@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-20T22:55:37.265554+00:00",
+  "generatedAt": "2026-11-24T19:47:16.405328+00:00",
   "season": 2026,
   "players": [
     {
@@ -9,34 +9,10 @@
       "redZoneShare": 0.067
     },
     {
-      "player": "J.Bates",
-      "team": "WAS",
+      "player": "A.Pierce",
+      "team": "IND",
       "week": 1,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "D.Smythe",
-      "team": "BAL",
-      "week": 1,
-      "redZoneShare": 0.091
-    },
-    {
-      "player": "D.Njoku",
-      "team": "LAC",
-      "week": 1,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "D.Lock",
-      "team": "SEA",
-      "week": 1,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "S.Vaki",
-      "team": "DET",
-      "week": 1,
-      "redZoneShare": 0.062
+      "redZoneShare": 0.125
     },
     {
       "player": "J.Walker",
@@ -51,58 +27,34 @@
       "redZoneShare": 0.111
     },
     {
+      "player": "D.Lock",
+      "team": "SEA",
+      "week": 1,
+      "redZoneShare": 0.167
+    },
+    {
+      "player": "J.Bates",
+      "team": "WAS",
+      "week": 1,
+      "redZoneShare": 0.143
+    },
+    {
       "player": "R.Rivers",
       "team": "LA",
       "week": 1,
       "redZoneShare": 0.222
     },
     {
-      "player": "L.McConkey",
-      "team": "LAC",
+      "player": "D.Smythe",
+      "team": "BAL",
       "week": 1,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "A.Pierce",
-      "team": "IND",
-      "week": 1,
-      "redZoneShare": 0.125
-    },
-    {
-      "player": "A.Williams",
-      "team": "WAS",
-      "week": 1,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "X.Legette",
-      "team": "CAR",
-      "week": 2,
-      "redZoneShare": 0.05
-    },
-    {
-      "player": "X.Smith",
-      "team": "LA",
-      "week": 2,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "T.Ferguson",
-      "team": "LA",
-      "week": 2,
-      "redZoneShare": 0.167
+      "redZoneShare": 0.091
     },
     {
       "player": "L.Allen",
       "team": "JAX",
       "week": 2,
       "redZoneShare": 0.167
-    },
-    {
-      "player": "D.Brown",
-      "team": "WAS",
-      "week": 2,
-      "redZoneShare": 0.1
     },
     {
       "player": "S.Roush",
@@ -117,16 +69,34 @@
       "redZoneShare": 0.2
     },
     {
+      "player": "T.Ferguson",
+      "team": "LA",
+      "week": 2,
+      "redZoneShare": 0.167
+    },
+    {
       "player": "D.Achane",
       "team": "MIA",
       "week": 2,
       "redZoneShare": 0.4
     },
     {
-      "player": "Z.Ertz",
-      "team": "PHI",
-      "week": 3,
-      "redZoneShare": 0.111
+      "player": "D.Brown",
+      "team": "WAS",
+      "week": 2,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "X.Legette",
+      "team": "CAR",
+      "week": 2,
+      "redZoneShare": 0.05
+    },
+    {
+      "player": "X.Smith",
+      "team": "LA",
+      "week": 2,
+      "redZoneShare": 0.167
     },
     {
       "player": "A.Hooper",
@@ -141,16 +111,10 @@
       "redZoneShare": 0.071
     },
     {
-      "player": "R.Tonyan",
-      "team": "PIT",
+      "player": "J.Smith",
+      "team": "GB",
       "week": 3,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "B.Smith",
-      "team": "KC",
-      "week": 3,
-      "redZoneShare": 0.071
+      "redZoneShare": 0.091
     },
     {
       "player": "J.Ruckert",
@@ -159,10 +123,10 @@
       "redZoneShare": 0.111
     },
     {
-      "player": "J.Smith",
-      "team": "GB",
+      "player": "B.Smith",
+      "team": "KC",
       "week": 3,
-      "redZoneShare": 0.091
+      "redZoneShare": 0.071
     },
     {
       "player": "K.Turpin",
@@ -171,16 +135,16 @@
       "redZoneShare": 0.118
     },
     {
+      "player": "E.Saubert",
+      "team": "SEA",
+      "week": 3,
+      "redZoneShare": 0.083
+    },
+    {
       "player": "M.Mariota",
       "team": "WAS",
       "week": 3,
       "redZoneShare": 0.143
-    },
-    {
-      "player": "L.Jackson",
-      "team": "BAL",
-      "week": 3,
-      "redZoneShare": 0.222
     },
     {
       "player": "M.Hibner",
@@ -189,10 +153,10 @@
       "redZoneShare": 0.056
     },
     {
-      "player": "C.Keenum",
-      "team": "CHI",
+      "player": "L.Jackson",
+      "team": "BAL",
       "week": 3,
-      "redZoneShare": 0.053
+      "redZoneShare": 0.222
     },
     {
       "player": "D.Wicks",
@@ -201,28 +165,22 @@
       "redZoneShare": 0.222
     },
     {
-      "player": "E.Saubert",
-      "team": "SEA",
+      "player": "C.Keenum",
+      "team": "CHI",
       "week": 3,
-      "redZoneShare": 0.083
+      "redZoneShare": 0.053
     },
     {
-      "player": "C.Watson",
-      "team": "GB",
-      "week": 4,
-      "redZoneShare": 0.067
-    },
-    {
-      "player": "B.Brown",
-      "team": "NO",
-      "week": 4,
-      "redZoneShare": 0.091
-    },
-    {
-      "player": "T.Homer",
+      "player": "R.Tonyan",
       "team": "PIT",
-      "week": 4,
-      "redZoneShare": 0.154
+      "week": 3,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "Z.Ertz",
+      "team": "PHI",
+      "week": 3,
+      "redZoneShare": 0.111
     },
     {
       "player": "A.Rodgers",
@@ -237,10 +195,58 @@
       "redZoneShare": 0.125
     },
     {
+      "player": "T.Homer",
+      "team": "PIT",
+      "week": 4,
+      "redZoneShare": 0.154
+    },
+    {
+      "player": "C.Manhertz",
+      "team": "NYG",
+      "week": 4,
+      "redZoneShare": 0.091
+    },
+    {
+      "player": "B.Wright",
+      "team": "DET",
+      "week": 4,
+      "redZoneShare": 0.071
+    },
+    {
+      "player": "T.Badie",
+      "team": "DEN",
+      "week": 4,
+      "redZoneShare": 0.5
+    },
+    {
+      "player": "T.Bigsby",
+      "team": "PHI",
+      "week": 4,
+      "redZoneShare": 0.182
+    },
+    {
+      "player": "M.Stafford",
+      "team": "LA",
+      "week": 4,
+      "redZoneShare": 0.1
+    },
+    {
       "player": "M.Tinsley",
       "team": "CIN",
       "week": 4,
       "redZoneShare": 0.3
+    },
+    {
+      "player": "B.Brown",
+      "team": "NO",
+      "week": 4,
+      "redZoneShare": 0.091
+    },
+    {
+      "player": "T.Spears",
+      "team": "TEN",
+      "week": 4,
+      "redZoneShare": 0.067
     },
     {
       "player": "J.Palmer",
@@ -261,58 +267,10 @@
       "redZoneShare": 0.273
     },
     {
-      "player": "J.Croskey-Merritt",
-      "team": "WAS",
-      "week": 4,
-      "redZoneShare": 0.667
-    },
-    {
-      "player": "N.Singleton",
-      "team": "TEN",
+      "player": "C.Watson",
+      "team": "GB",
       "week": 4,
       "redZoneShare": 0.067
-    },
-    {
-      "player": "T.Badie",
-      "team": "DEN",
-      "week": 4,
-      "redZoneShare": 0.5
-    },
-    {
-      "player": "M.Stafford",
-      "team": "LA",
-      "week": 4,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "C.Manhertz",
-      "team": "NYG",
-      "week": 4,
-      "redZoneShare": 0.091
-    },
-    {
-      "player": "B.Wright",
-      "team": "DET",
-      "week": 4,
-      "redZoneShare": 0.071
-    },
-    {
-      "player": "R.Wilson",
-      "team": "PIT",
-      "week": 4,
-      "redZoneShare": 0.154
-    },
-    {
-      "player": "S.Shepard",
-      "team": "NYJ",
-      "week": 4,
-      "redZoneShare": 0.333
-    },
-    {
-      "player": "K.Monangai",
-      "team": "CHI",
-      "week": 4,
-      "redZoneShare": 0.381
     },
     {
       "player": "T.Thornton",
@@ -321,34 +279,16 @@
       "redZoneShare": 0.25
     },
     {
-      "player": "T.Spears",
+      "player": "N.Singleton",
       "team": "TEN",
       "week": 4,
       "redZoneShare": 0.067
     },
     {
-      "player": "T.Bigsby",
-      "team": "PHI",
-      "week": 4,
-      "redZoneShare": 0.182
-    },
-    {
-      "player": "C.Stroud",
-      "team": "HOU",
+      "player": "N.Harris",
+      "team": "NYG",
       "week": 5,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "T.Hudson",
-      "team": "CIN",
-      "week": 5,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "D.Adams",
-      "team": "LA",
-      "week": 5,
-      "redZoneShare": 0.188
+      "redZoneShare": 0.125
     },
     {
       "player": "T.Quitoriano",
@@ -357,46 +297,10 @@
       "redZoneShare": 0.167
     },
     {
-      "player": "S.Bell",
-      "team": "BUF",
+      "player": "T.McLaurin",
+      "team": "WAS",
       "week": 5,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "J.Matthews",
-      "team": "ATL",
-      "week": 5,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "J.Jennings",
-      "team": "MIN",
-      "week": 5,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "M.Price",
-      "team": "MIN",
-      "week": 5,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "T.Bagent",
-      "team": "CHI",
-      "week": 5,
-      "redZoneShare": 0.091
-    },
-    {
-      "player": "D.Walker",
-      "team": "BAL",
-      "week": 5,
-      "redZoneShare": 0.077
-    },
-    {
-      "player": "J.Cameron",
-      "team": "JAX",
-      "week": 5,
-      "redZoneShare": 0.167
+      "redZoneShare": 0.333
     },
     {
       "player": "J.Hurts",
@@ -411,14 +315,80 @@
       "redZoneShare": 0.067
     },
     {
-      "player": "N.Harris",
-      "team": "NYG",
+      "player": "C.Stroud",
+      "team": "HOU",
       "week": 5,
-      "redZoneShare": 0.125
+      "redZoneShare": 0.1
     },
     {
       "player": "S.Moore",
       "team": "GB",
+      "week": 5,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "M.Price",
+      "team": "MIN",
+      "week": 5,
+      "redZoneShare": 0.167
+    },
+    {
+      "player": "T.Bagent",
+      "team": "CHI",
+      "week": 5,
+      "redZoneShare": 0.091
+    },
+    {
+      "player": "H.Rucci",
+      "team": "LAC",
+      "week": 5,
+      "redZoneShare": 0.5
+    },
+    {
+      "player": "K.Murray",
+      "team": "MIN",
+      "week": 5,
+      "redZoneShare": 0.083
+    },
+    {
+      "player": "D.Walker",
+      "team": "BAL",
+      "week": 5,
+      "redZoneShare": 0.077
+    },
+    {
+      "player": "S.Bell",
+      "team": "BUF",
+      "week": 5,
+      "redZoneShare": 0.083
+    },
+    {
+      "player": "D.Adams",
+      "team": "LA",
+      "week": 5,
+      "redZoneShare": 0.188
+    },
+    {
+      "player": "D.Laube",
+      "team": "LV",
+      "week": 5,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "J.Mingo",
+      "team": "DAL",
+      "week": 5,
+      "redZoneShare": 0.167
+    },
+    {
+      "player": "T.Hudson",
+      "team": "CIN",
+      "week": 5,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "J.Matthews",
+      "team": "ATL",
       "week": 5,
       "redZoneShare": 0.111
     },
@@ -429,34 +399,10 @@
       "redZoneShare": 0.067
     },
     {
-      "player": "H.Rucci",
-      "team": "LAC",
-      "week": 5,
-      "redZoneShare": 0.5
-    },
-    {
-      "player": "T.Felton",
-      "team": "MIN",
-      "week": 5,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "D.Laube",
-      "team": "LV",
-      "week": 5,
-      "redZoneShare": 0.125
-    },
-    {
       "player": "J.Tolbert",
       "team": "MIA",
       "week": 5,
       "redZoneShare": 0.059
-    },
-    {
-      "player": "J.Mingo",
-      "team": "DAL",
-      "week": 5,
-      "redZoneShare": 0.167
     },
     {
       "player": "W.Shipley",
@@ -465,52 +411,10 @@
       "redZoneShare": 0.5
     },
     {
-      "player": "T.McLaurin",
-      "team": "WAS",
-      "week": 5,
-      "redZoneShare": 0.333
-    },
-    {
-      "player": "K.Murray",
-      "team": "MIN",
-      "week": 5,
-      "redZoneShare": 0.083
-    },
-    {
       "player": "W.Mallory",
       "team": "IND",
       "week": 6,
       "redZoneShare": 0.111
-    },
-    {
-      "player": "K.Bourne",
-      "team": "ARI",
-      "week": 6,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "C.Kmet",
-      "team": "CHI",
-      "week": 6,
-      "redZoneShare": 0.062
-    },
-    {
-      "player": "C.Kolar",
-      "team": "LAC",
-      "week": 6,
-      "redZoneShare": 0.222
-    },
-    {
-      "player": "C.Donaldson",
-      "team": "NO",
-      "week": 6,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "J.Jordan",
-      "team": "HOU",
-      "week": 6,
-      "redZoneShare": 0.133
     },
     {
       "player": "J.McCarthy",
@@ -531,52 +435,10 @@
       "redZoneShare": 0.375
     },
     {
-      "player": "R.Bateman",
+      "player": "T.Huntley",
       "team": "BAL",
       "week": 6,
       "redZoneShare": 0.111
-    },
-    {
-      "player": "Br.Robinson",
-      "team": "ATL",
-      "week": 6,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "R.Harvey",
-      "team": "DEN",
-      "week": 6,
-      "redZoneShare": 0.4
-    },
-    {
-      "player": "D.Smith",
-      "team": "PHI",
-      "week": 6,
-      "redZoneShare": 0.333
-    },
-    {
-      "player": "M.Alie-Cox",
-      "team": "IND",
-      "week": 6,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "K.Vidal",
-      "team": "LAC",
-      "week": 6,
-      "redZoneShare": 0.222
-    },
-    {
-      "player": "D.Douglas",
-      "team": "NE",
-      "week": 6,
-      "redZoneShare": 0.071
-    },
-    {
-      "player": "T.Burks",
-      "team": "WAS",
-      "week": 6,
-      "redZoneShare": 0.125
     },
     {
       "player": "B.Cooks",
@@ -585,19 +447,79 @@
       "redZoneShare": 0.062
     },
     {
+      "player": "D.Smith",
+      "team": "PHI",
+      "week": 6,
+      "redZoneShare": 0.333
+    },
+    {
+      "player": "D.Douglas",
+      "team": "NE",
+      "week": 6,
+      "redZoneShare": 0.071
+    },
+    {
       "player": "T.Hunter",
       "team": "JAX",
       "week": 6,
       "redZoneShare": 0.118
     },
     {
-      "player": "T.Huntley",
-      "team": "BAL",
+      "player": "M.Alie-Cox",
+      "team": "IND",
       "week": 6,
       "redZoneShare": 0.111
     },
     {
+      "player": "T.Burks",
+      "team": "WAS",
+      "week": 6,
+      "redZoneShare": 0.125
+    },
+    {
       "player": "F.Moreau",
+      "team": "HOU",
+      "week": 6,
+      "redZoneShare": 0.133
+    },
+    {
+      "player": "R.Harvey",
+      "team": "DEN",
+      "week": 6,
+      "redZoneShare": 0.4
+    },
+    {
+      "player": "Br.Robinson",
+      "team": "ATL",
+      "week": 6,
+      "redZoneShare": 0.167
+    },
+    {
+      "player": "C.Kmet",
+      "team": "CHI",
+      "week": 6,
+      "redZoneShare": 0.062
+    },
+    {
+      "player": "C.Kolar",
+      "team": "LAC",
+      "week": 6,
+      "redZoneShare": 0.222
+    },
+    {
+      "player": "K.Bourne",
+      "team": "ARI",
+      "week": 6,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "C.Donaldson",
+      "team": "NO",
+      "week": 6,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "J.Jordan",
       "team": "HOU",
       "week": 6,
       "redZoneShare": 0.133
@@ -615,40 +537,16 @@
       "redZoneShare": 0.071
     },
     {
-      "player": "Z.Flowers",
-      "team": "BAL",
+      "player": "Z.Branch",
+      "team": "ATL",
       "week": 7,
-      "redZoneShare": 0.2
+      "redZoneShare": 0.091
     },
     {
-      "player": "C.Tate",
-      "team": "TEN",
+      "player": "A.Beck",
+      "team": "NYJ",
       "week": 7,
-      "redZoneShare": 0.067
-    },
-    {
-      "player": "C.White",
-      "team": "LV",
-      "week": 7,
-      "redZoneShare": 0.071
-    },
-    {
-      "player": "C.Williams",
-      "team": "CHI",
-      "week": 7,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "C.Stover",
-      "team": "HOU",
-      "week": 7,
-      "redZoneShare": 0.222
-    },
-    {
-      "player": "E.All",
-      "team": "CIN",
-      "week": 7,
-      "redZoneShare": 0.1
+      "redZoneShare": 0.077
     },
     {
       "player": "S.Tucker",
@@ -663,100 +561,10 @@
       "redZoneShare": 0.053
     },
     {
-      "player": "G.Holani",
-      "team": "SEA",
-      "week": 7,
-      "redZoneShare": 0.222
-    },
-    {
-      "player": "T.Hurst",
-      "team": "TB",
-      "week": 7,
-      "redZoneShare": 0.059
-    },
-    {
-      "player": "K.Miller",
-      "team": "NO",
-      "week": 7,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "K.Herbert",
-      "team": "ATL",
-      "week": 7,
-      "redZoneShare": 0.182
-    },
-    {
       "player": "K.Black",
       "team": "SF",
       "week": 7,
       "redZoneShare": 0.429
-    },
-    {
-      "player": "J.Brissett",
-      "team": "ARI",
-      "week": 7,
-      "redZoneShare": 0.211
-    },
-    {
-      "player": "J.Brooks",
-      "team": "ARI",
-      "week": 7,
-      "redZoneShare": 0.105
-    },
-    {
-      "player": "D.Vele",
-      "team": "NO",
-      "week": 7,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "B.Lance",
-      "team": "NO",
-      "week": 7,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "B.Tremayne",
-      "team": "CAR",
-      "week": 7,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "J.Cuevas",
-      "team": "BAL",
-      "week": 7,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "R.Shaheed",
-      "team": "SEA",
-      "week": 7,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "B.Young",
-      "team": "CAR",
-      "week": 7,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "Bi.Robinson",
-      "team": "ATL",
-      "week": 7,
-      "redZoneShare": 0.364
-    },
-    {
-      "player": "D.Pierce",
-      "team": "PHI",
-      "week": 7,
-      "redZoneShare": 0.5
-    },
-    {
-      "player": "J.Winston",
-      "team": "NYG",
-      "week": 7,
-      "redZoneShare": 0.5
     },
     {
       "player": "J.Woods",
@@ -765,28 +573,34 @@
       "redZoneShare": 0.077
     },
     {
-      "player": "D.Goedert",
-      "team": "PHI",
+      "player": "B.Tremayne",
+      "team": "CAR",
       "week": 7,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "M.Benson",
-      "team": "LV",
-      "week": 7,
-      "redZoneShare": 0.071
-    },
-    {
-      "player": "M.Carter",
-      "team": "TEN",
-      "week": 7,
-      "redZoneShare": 0.067
+      "redZoneShare": 0.2
     },
     {
       "player": "M.Harrison",
       "team": "HOU",
       "week": 7,
       "redZoneShare": 0.111
+    },
+    {
+      "player": "M.Lloyd",
+      "team": "GB",
+      "week": 7,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "D.Pierce",
+      "team": "PHI",
+      "week": 7,
+      "redZoneShare": 0.5
+    },
+    {
+      "player": "C.Williams",
+      "team": "CHI",
+      "week": 7,
+      "redZoneShare": 0.167
     },
     {
       "player": "N.Muse",
@@ -801,70 +615,70 @@
       "redZoneShare": 0.077
     },
     {
-      "player": "J.Jeudy",
-      "team": "CLE",
+      "player": "B.Lance",
+      "team": "NO",
       "week": 7,
-      "redZoneShare": 0.125
+      "redZoneShare": 0.083
     },
     {
-      "player": "D.Jones",
-      "team": "IND",
-      "week": 7,
-      "redZoneShare": 0.25
-    },
-    {
-      "player": "J.Noel",
-      "team": "HOU",
-      "week": 7,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "C.Douglas",
-      "team": "MIA",
-      "week": 7,
-      "redZoneShare": 0.091
-    },
-    {
-      "player": "M.Willis",
-      "team": "MIA",
-      "week": 7,
-      "redZoneShare": 0.091
-    },
-    {
-      "player": "M.Lloyd",
-      "team": "GB",
+      "player": "J.Cuevas",
+      "team": "BAL",
       "week": 7,
       "redZoneShare": 0.1
     },
     {
-      "player": "A.Beck",
-      "team": "NYJ",
+      "player": "D.Goedert",
+      "team": "PHI",
       "week": 7,
-      "redZoneShare": 0.077
+      "redZoneShare": 0.1
     },
     {
-      "player": "Z.Branch",
+      "player": "K.Herbert",
       "team": "ATL",
       "week": 7,
-      "redZoneShare": 0.091
+      "redZoneShare": 0.182
     },
     {
-      "player": "A.Ogletree",
-      "team": "IND",
+      "player": "K.Miller",
+      "team": "NO",
       "week": 7,
-      "redZoneShare": 0.25
+      "redZoneShare": 0.167
     },
     {
-      "player": "A.Tyus",
+      "player": "R.Shaheed",
+      "team": "SEA",
+      "week": 7,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "G.Holani",
+      "team": "SEA",
+      "week": 7,
+      "redZoneShare": 0.222
+    },
+    {
+      "player": "J.Brissett",
+      "team": "ARI",
+      "week": 7,
+      "redZoneShare": 0.211
+    },
+    {
+      "player": "J.Brooks",
+      "team": "ARI",
+      "week": 7,
+      "redZoneShare": 0.105
+    },
+    {
+      "player": "B.Young",
       "team": "CAR",
       "week": 7,
       "redZoneShare": 0.2
     },
     {
-      "player": "V.Jones",
-      "team": "SEA",
+      "player": "Bi.Robinson",
+      "team": "ATL",
       "week": 7,
-      "redZoneShare": 0.222
+      "redZoneShare": 0.364
     },
     {
       "player": "E.Higgins",
@@ -873,34 +687,88 @@
       "redZoneShare": 0.053
     },
     {
-      "player": "T.Tracy",
-      "team": "NYG",
-      "week": 7,
-      "redZoneShare": 0.25
-    },
-    {
       "player": "E.Wilson",
       "team": "SEA",
       "week": 7,
       "redZoneShare": 0.222
     },
     {
-      "player": "M.Mayer",
+      "player": "C.White",
       "team": "LV",
-      "week": 8,
-      "redZoneShare": 0.059
+      "week": 7,
+      "redZoneShare": 0.071
     },
     {
-      "player": "M.Lemon",
-      "team": "PHI",
-      "week": 8,
+      "player": "M.Benson",
+      "team": "LV",
+      "week": 7,
+      "redZoneShare": 0.071
+    },
+    {
+      "player": "E.All",
+      "team": "CIN",
+      "week": 7,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "C.Stover",
+      "team": "HOU",
+      "week": 7,
+      "redZoneShare": 0.222
+    },
+    {
+      "player": "D.Jones",
+      "team": "IND",
+      "week": 7,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "M.Willis",
+      "team": "MIA",
+      "week": 7,
+      "redZoneShare": 0.091
+    },
+    {
+      "player": "V.Jones",
+      "team": "SEA",
+      "week": 7,
+      "redZoneShare": 0.222
+    },
+    {
+      "player": "A.Tyus",
+      "team": "CAR",
+      "week": 7,
       "redZoneShare": 0.2
     },
     {
-      "player": "N.Adkins",
-      "team": "DEN",
+      "player": "J.Jeudy",
+      "team": "CLE",
+      "week": 7,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "J.Noel",
+      "team": "HOU",
+      "week": 7,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "T.Tracy",
+      "team": "NYG",
+      "week": 7,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "A.Ogletree",
+      "team": "IND",
+      "week": 7,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "T.Warren",
+      "team": "IND",
       "week": 8,
-      "redZoneShare": 0.083
+      "redZoneShare": 0.2
     },
     {
       "player": "J.Metchie",
@@ -909,178 +777,22 @@
       "redZoneShare": 0.111
     },
     {
-      "player": "M.Taylor",
-      "team": "NYJ",
-      "week": 8,
-      "redZoneShare": 0.062
-    },
-    {
-      "player": "J.Waddle",
-      "team": "DEN",
-      "week": 8,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "J.Warren",
-      "team": "PIT",
-      "week": 8,
-      "redZoneShare": 0.308
-    },
-    {
-      "player": "I.Davis",
-      "team": "NYJ",
-      "week": 8,
-      "redZoneShare": 0.125
-    },
-    {
-      "player": "G.Smith",
-      "team": "NYJ",
-      "week": 8,
-      "redZoneShare": 0.062
-    },
-    {
-      "player": "T.Hockenson",
-      "team": "MIN",
-      "week": 8,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "T.Horton",
-      "team": "SEA",
-      "week": 8,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "B.Bowers",
-      "team": "LV",
-      "week": 8,
-      "redZoneShare": 0.235
-    },
-    {
-      "player": "G.Helm",
-      "team": "TEN",
-      "week": 8,
-      "redZoneShare": 0.091
-    },
-    {
-      "player": "T.Johnson",
-      "team": "BUF",
-      "week": 8,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "J.Smith-Njigba",
-      "team": "SEA",
-      "week": 8,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "C.Okonkwo",
-      "team": "WAS",
-      "week": 8,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "C.Kupp",
-      "team": "SEA",
-      "week": 8,
-      "redZoneShare": 0.25
-    },
-    {
-      "player": "J.Addison",
-      "team": "MIN",
-      "week": 8,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "L.Burden",
-      "team": "CHI",
-      "week": 8,
-      "redZoneShare": 0.133
-    },
-    {
-      "player": "B.Nix",
-      "team": "DEN",
-      "week": 8,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "R.Rice",
-      "team": "KC",
-      "week": 8,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "C.Godwin",
-      "team": "TB",
-      "week": 8,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "D.Maye",
-      "team": "NE",
-      "week": 8,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "C.Dike",
-      "team": "TEN",
-      "week": 8,
-      "redZoneShare": 0.091
-    },
-    {
-      "player": "P.Freiermuth",
-      "team": "PIT",
-      "week": 8,
-      "redZoneShare": 0.154
-    },
-    {
-      "player": "Bri.Thomas",
-      "team": "JAX",
-      "week": 8,
-      "redZoneShare": 0.25
-    },
-    {
-      "player": "R.Johnson",
-      "team": "CHI",
-      "week": 8,
-      "redZoneShare": 0.267
-    },
-    {
-      "player": "N.Gray",
-      "team": "KC",
-      "week": 8,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "M.Evans",
-      "team": "CAR",
-      "week": 8,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "K.Shakir",
-      "team": "BUF",
-      "week": 8,
-      "redZoneShare": 0.056
-    },
-    {
       "player": "J.Hawes",
       "team": "BUF",
       "week": 8,
       "redZoneShare": 0.056
     },
     {
-      "player": "G.Bernard",
-      "team": "PIT",
+      "player": "N.Adkins",
+      "team": "DEN",
       "week": 8,
-      "redZoneShare": 0.077
+      "redZoneShare": 0.083
     },
     {
-      "player": "E.Mitchell",
-      "team": "PHI",
+      "player": "E.Ayomanor",
+      "team": "TEN",
       "week": 8,
-      "redZoneShare": 0.4
+      "redZoneShare": 0.091
     },
     {
       "player": "D.Washington",
@@ -1089,7 +801,103 @@
       "redZoneShare": 0.077
     },
     {
-      "player": "E.Ayomanor",
+      "player": "L.Burden",
+      "team": "CHI",
+      "week": 8,
+      "redZoneShare": 0.133
+    },
+    {
+      "player": "R.Johnson",
+      "team": "CHI",
+      "week": 8,
+      "redZoneShare": 0.267
+    },
+    {
+      "player": "C.Okonkwo",
+      "team": "WAS",
+      "week": 8,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "E.Mitchell",
+      "team": "PHI",
+      "week": 8,
+      "redZoneShare": 0.4
+    },
+    {
+      "player": "C.Godwin",
+      "team": "TB",
+      "week": 8,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "G.Helm",
+      "team": "TEN",
+      "week": 8,
+      "redZoneShare": 0.091
+    },
+    {
+      "player": "I.Davis",
+      "team": "NYJ",
+      "week": 8,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "B.Bowers",
+      "team": "LV",
+      "week": 8,
+      "redZoneShare": 0.235
+    },
+    {
+      "player": "J.Smith-Njigba",
+      "team": "SEA",
+      "week": 8,
+      "redZoneShare": 0.083
+    },
+    {
+      "player": "T.Horton",
+      "team": "SEA",
+      "week": 8,
+      "redZoneShare": 0.167
+    },
+    {
+      "player": "M.Taylor",
+      "team": "NYJ",
+      "week": 8,
+      "redZoneShare": 0.062
+    },
+    {
+      "player": "M.Mayer",
+      "team": "LV",
+      "week": 8,
+      "redZoneShare": 0.059
+    },
+    {
+      "player": "D.Maye",
+      "team": "NE",
+      "week": 8,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "C.Kupp",
+      "team": "SEA",
+      "week": 8,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "G.Smith",
+      "team": "NYJ",
+      "week": 8,
+      "redZoneShare": 0.062
+    },
+    {
+      "player": "J.Addison",
+      "team": "MIN",
+      "week": 8,
+      "redZoneShare": 0.167
+    },
+    {
+      "player": "C.Dike",
       "team": "TEN",
       "week": 8,
       "redZoneShare": 0.091
@@ -1101,376 +909,10 @@
       "redZoneShare": 0.182
     },
     {
-      "player": "T.Warren",
-      "team": "IND",
-      "week": 8,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "C.Ward",
-      "team": "TEN",
-      "week": 8,
-      "redZoneShare": 0.091
-    },
-    {
-      "player": "C.Ridley",
-      "team": "TEN",
-      "week": 8,
-      "redZoneShare": 0.091
-    },
-    {
-      "player": "A.Ekeler",
-      "team": "WAS",
-      "week": 8,
-      "redZoneShare": 0.286
-    },
-    {
       "player": "Z.Knight",
       "team": "ARI",
       "week": 8,
       "redZoneShare": 0.071
-    },
-    {
-      "player": "X.Worthy",
-      "team": "KC",
-      "week": 9,
-      "redZoneShare": 0.154
-    },
-    {
-      "player": "T.Shough",
-      "team": "NO",
-      "week": 9,
-      "redZoneShare": 0.3
-    },
-    {
-      "player": "E.Raridon",
-      "team": "NE",
-      "week": 9,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "T.Tucker",
-      "team": "LV",
-      "week": 9,
-      "redZoneShare": 0.25
-    },
-    {
-      "player": "T.Kelce",
-      "team": "KC",
-      "week": 9,
-      "redZoneShare": 0.154
-    },
-    {
-      "player": "P.Bryant",
-      "team": "DEN",
-      "week": 9,
-      "redZoneShare": 0.071
-    },
-    {
-      "player": "J.Goff",
-      "team": "DET",
-      "week": 9,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "J.Love",
-      "team": "GB",
-      "week": 9,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "G.Kittle",
-      "team": "SF",
-      "week": 9,
-      "redZoneShare": 0.077
-    },
-    {
-      "player": "G.Minshew",
-      "team": "ARI",
-      "week": 9,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "K.Gainwell",
-      "team": "TB",
-      "week": 9,
-      "redZoneShare": 0.25
-    },
-    {
-      "player": "K.Boutte",
-      "team": "HOU",
-      "week": 9,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "K.Coleman",
-      "team": "BUF",
-      "week": 9,
-      "redZoneShare": 0.125
-    },
-    {
-      "player": "B.Allen",
-      "team": "NYJ",
-      "week": 9,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "K.Cousins",
-      "team": "LV",
-      "week": 9,
-      "redZoneShare": 0.5
-    },
-    {
-      "player": "L.Farrell",
-      "team": "SF",
-      "week": 9,
-      "redZoneShare": 0.077
-    },
-    {
-      "player": "K.Pitts",
-      "team": "ATL",
-      "week": 9,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "K.Raymond",
-      "team": "CHI",
-      "week": 9,
-      "redZoneShare": 0.125
-    },
-    {
-      "player": "B.Irving",
-      "team": "TB",
-      "week": 9,
-      "redZoneShare": 0.438
-    },
-    {
-      "player": "D.Swift",
-      "team": "CHI",
-      "week": 9,
-      "redZoneShare": 0.375
-    },
-    {
-      "player": "T.Conklin",
-      "team": "DET",
-      "week": 9,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "T.Allgeier",
-      "team": "ARI",
-      "week": 9,
-      "redZoneShare": 0.4
-    },
-    {
-      "player": "B.Purdy",
-      "team": "SF",
-      "week": 9,
-      "redZoneShare": 0.231
-    },
-    {
-      "player": "T.Harris",
-      "team": "LAC",
-      "week": 9,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "T.Franklin",
-      "team": "DEN",
-      "week": 9,
-      "redZoneShare": 0.071
-    },
-    {
-      "player": "S.Sanders",
-      "team": "CLE",
-      "week": 9,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "C.Kiner",
-      "team": "NE",
-      "week": 9,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "M.Penix",
-      "team": "ATL",
-      "week": 9,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "C.Loveland",
-      "team": "CHI",
-      "week": 9,
-      "redZoneShare": 0.125
-    },
-    {
-      "player": "M.Mims",
-      "team": "DEN",
-      "week": 9,
-      "redZoneShare": 0.071
-    },
-    {
-      "player": "J.Johnson",
-      "team": "NO",
-      "week": 9,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "J.Ferguson",
-      "team": "DAL",
-      "week": 9,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "K.Allen",
-      "team": "IND",
-      "week": 9,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "K.Walker",
-      "team": "KC",
-      "week": 9,
-      "redZoneShare": 0.385
-    },
-    {
-      "player": "D.Davis",
-      "team": "LAC",
-      "week": 9,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "N.Fant",
-      "team": "NO",
-      "week": 9,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "M.Fields",
-      "team": "NYG",
-      "week": 9,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "M.Golden",
-      "team": "GB",
-      "week": 9,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "S.Ahmed",
-      "team": "CHI",
-      "week": 9,
-      "redZoneShare": 0.125
-    },
-    {
-      "player": "R.Odunze",
-      "team": "CHI",
-      "week": 9,
-      "redZoneShare": 0.25
-    },
-    {
-      "player": "B.Mayfield",
-      "team": "TB",
-      "week": 9,
-      "redZoneShare": 0.062
-    },
-    {
-      "player": "J.Coleman",
-      "team": "DEN",
-      "week": 9,
-      "redZoneShare": 0.214
-    },
-    {
-      "player": "D.Robinson",
-      "team": "SF",
-      "week": 9,
-      "redZoneShare": 0.077
-    },
-    {
-      "player": "T.Dell",
-      "team": "HOU",
-      "week": 9,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "D.Singletary",
-      "team": "NYG",
-      "week": 9,
-      "redZoneShare": 0.4
-    },
-    {
-      "player": "J.Burrow",
-      "team": "CIN",
-      "week": 9,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "S.Barkley",
-      "team": "PHI",
-      "week": 9,
-      "redZoneShare": 0.5
-    },
-    {
-      "player": "R.Virgil",
-      "team": "ARI",
-      "week": 9,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "J.Jacobs",
-      "team": "GB",
-      "week": 9,
-      "redZoneShare": 0.214
-    },
-    {
-      "player": "J.Dobbins",
-      "team": "DEN",
-      "week": 9,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "P.Mahomes",
-      "team": "KC",
-      "week": 9,
-      "redZoneShare": 0.077
-    },
-    {
-      "player": "P.Nacua",
-      "team": "LA",
-      "week": 9,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "P.Strong",
-      "team": "GB",
-      "week": 9,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "J.Milton",
-      "team": "PHI",
-      "week": 9,
-      "redZoneShare": 0.5
-    },
-    {
-      "player": "J.Royals",
-      "team": "KC",
-      "week": 9,
-      "redZoneShare": 0.077
-    },
-    {
-      "player": "O.Gadsden",
-      "team": "LAC",
-      "week": 9,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "D.Knox",
-      "team": "BUF",
-      "week": 9,
-      "redZoneShare": 0.125
     },
     {
       "player": "A.Abdullah",
@@ -1485,28 +927,112 @@
       "redZoneShare": 0.2
     },
     {
-      "player": "K.Mitchell",
-      "team": "LAC",
+      "player": "A.Mitchell",
+      "team": "NYJ",
       "week": 9,
-      "redZoneShare": 0.222
+      "redZoneShare": 0.4
     },
     {
-      "player": "K.Lambert-Smith",
+      "player": "J.Johnson",
+      "team": "NO",
+      "week": 9,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "M.Penix",
+      "team": "ATL",
+      "week": 9,
+      "redZoneShare": 0.083
+    },
+    {
+      "player": "M.Mims",
+      "team": "DEN",
+      "week": 9,
+      "redZoneShare": 0.071
+    },
+    {
+      "player": "O.Gadsden",
       "team": "LAC",
       "week": 9,
       "redZoneShare": 0.111
     },
     {
-      "player": "C.Otton",
-      "team": "TB",
+      "player": "D.Davis",
+      "team": "LAC",
       "week": 9,
-      "redZoneShare": 0.188
+      "redZoneShare": 0.111
     },
     {
-      "player": "C.Rodriguez",
-      "team": "JAX",
+      "player": "D.Robinson",
+      "team": "SF",
       "week": 9,
-      "redZoneShare": 0.182
+      "redZoneShare": 0.077
+    },
+    {
+      "player": "J.Dobbins",
+      "team": "DEN",
+      "week": 9,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "J.Ferguson",
+      "team": "DAL",
+      "week": 9,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "T.Goodson",
+      "team": "DAL",
+      "week": 9,
+      "redZoneShare": 0.3
+    },
+    {
+      "player": "T.Harris",
+      "team": "LAC",
+      "week": 9,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "T.Franklin",
+      "team": "DEN",
+      "week": 9,
+      "redZoneShare": 0.071
+    },
+    {
+      "player": "J.Royals",
+      "team": "KC",
+      "week": 9,
+      "redZoneShare": 0.077
+    },
+    {
+      "player": "D.Singletary",
+      "team": "NYG",
+      "week": 9,
+      "redZoneShare": 0.4
+    },
+    {
+      "player": "M.Golden",
+      "team": "GB",
+      "week": 9,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "M.Fields",
+      "team": "NYG",
+      "week": 9,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "P.Mahomes",
+      "team": "KC",
+      "week": 9,
+      "redZoneShare": 0.077
+    },
+    {
+      "player": "P.Bryant",
+      "team": "DEN",
+      "week": 9,
+      "redZoneShare": 0.071
     },
     {
       "player": "C.Sutton",
@@ -1515,20 +1041,62 @@
       "redZoneShare": 0.214
     },
     {
-      "player": "K.Mumpfield",
+      "player": "P.Nacua",
       "team": "LA",
       "week": 9,
       "redZoneShare": 0.083
     },
     {
-      "player": "T.McBride",
-      "team": "ARI",
+      "player": "P.Strong",
+      "team": "GB",
+      "week": 9,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "C.Woerner",
+      "team": "ATL",
+      "week": 9,
+      "redZoneShare": 0.167
+    },
+    {
+      "player": "K.Boutte",
+      "team": "HOU",
       "week": 9,
       "redZoneShare": 0.1
     },
     {
-      "player": "K.Johnson",
-      "team": "GB",
+      "player": "K.Coleman",
+      "team": "BUF",
+      "week": 9,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "B.Purdy",
+      "team": "SF",
+      "week": 9,
+      "redZoneShare": 0.231
+    },
+    {
+      "player": "T.Allgeier",
+      "team": "ARI",
+      "week": 9,
+      "redZoneShare": 0.4
+    },
+    {
+      "player": "T.Conklin",
+      "team": "DET",
+      "week": 9,
+      "redZoneShare": 0.083
+    },
+    {
+      "player": "T.Dell",
+      "team": "HOU",
+      "week": 9,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "J.Burrow",
+      "team": "CIN",
       "week": 9,
       "redZoneShare": 0.143
     },
@@ -1539,10 +1107,100 @@
       "redZoneShare": 0.077
     },
     {
-      "player": "C.Woerner",
-      "team": "ATL",
+      "player": "K.Lambert-Smith",
+      "team": "LAC",
       "week": 9,
-      "redZoneShare": 0.167
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "K.Gainwell",
+      "team": "TB",
+      "week": 9,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "K.Johnson",
+      "team": "GB",
+      "week": 9,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "S.Williams",
+      "team": "GB",
+      "week": 9,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "S.Sanders",
+      "team": "CLE",
+      "week": 9,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "K.Allen",
+      "team": "IND",
+      "week": 9,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "L.Farrell",
+      "team": "SF",
+      "week": 9,
+      "redZoneShare": 0.077
+    },
+    {
+      "player": "E.Chism",
+      "team": "NE",
+      "week": 9,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "K.Mitchell",
+      "team": "LAC",
+      "week": 9,
+      "redZoneShare": 0.222
+    },
+    {
+      "player": "K.Raymond",
+      "team": "CHI",
+      "week": 9,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "K.Mumpfield",
+      "team": "LA",
+      "week": 9,
+      "redZoneShare": 0.083
+    },
+    {
+      "player": "C.Kiner",
+      "team": "NE",
+      "week": 9,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "S.Ahmed",
+      "team": "CHI",
+      "week": 9,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "R.Virgil",
+      "team": "ARI",
+      "week": 9,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "G.Minshew",
+      "team": "ARI",
+      "week": 9,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "K.Cousins",
+      "team": "LV",
+      "week": 9,
+      "redZoneShare": 0.5
     },
     {
       "player": "E.Egbuka",
@@ -1557,19 +1215,37 @@
       "redZoneShare": 0.143
     },
     {
-      "player": "E.Chism",
+      "player": "E.Raridon",
       "team": "NE",
       "week": 9,
       "redZoneShare": 0.2
     },
     {
-      "player": "T.Goodson",
-      "team": "DAL",
+      "player": "K.Walker",
+      "team": "KC",
       "week": 9,
-      "redZoneShare": 0.3
+      "redZoneShare": 0.385
     },
     {
-      "player": "S.Williams",
+      "player": "C.Otton",
+      "team": "TB",
+      "week": 9,
+      "redZoneShare": 0.188
+    },
+    {
+      "player": "K.Pitts",
+      "team": "ATL",
+      "week": 9,
+      "redZoneShare": 0.083
+    },
+    {
+      "player": "T.Tucker",
+      "team": "LV",
+      "week": 9,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "J.Love",
       "team": "GB",
       "week": 9,
       "redZoneShare": 0.143
@@ -1581,154 +1257,16 @@
       "redZoneShare": 0.3
     },
     {
-      "player": "A.Mitchell",
-      "team": "NYJ",
-      "week": 9,
-      "redZoneShare": 0.4
-    },
-    {
       "player": "V.Jefferson",
       "team": "WAS",
       "week": 9,
       "redZoneShare": 1.0
     },
     {
-      "player": "A.St. Brown",
-      "team": "DET",
-      "week": 9,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "A.Trautman",
-      "team": "DEN",
-      "week": 9,
-      "redZoneShare": 0.071
-    },
-    {
-      "player": "M.Hollins",
-      "team": "NE",
-      "week": 10,
-      "redZoneShare": 0.25
-    },
-    {
-      "player": "T.Wease",
-      "team": "LAC",
-      "week": 10,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "A.Jones",
-      "team": "MIN",
-      "week": 10,
-      "redZoneShare": 0.545
-    },
-    {
-      "player": "J.Price",
-      "team": "SEA",
-      "week": 10,
-      "redZoneShare": 0.667
-    },
-    {
-      "player": "I.TeSlaa",
-      "team": "DET",
-      "week": 10,
-      "redZoneShare": 0.25
-    },
-    {
-      "player": "M.Washington",
-      "team": "LV",
-      "week": 10,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "G.Dulcich",
-      "team": "MIA",
-      "week": 10,
-      "redZoneShare": 0.333
-    },
-    {
-      "player": "S.Perine",
-      "team": "CIN",
-      "week": 10,
-      "redZoneShare": 0.25
-    },
-    {
-      "player": "T.Lawrence",
-      "team": "JAX",
-      "week": 10,
-      "redZoneShare": 0.062
-    },
-    {
-      "player": "T.Higgins",
-      "team": "CIN",
-      "week": 10,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "D.Watson",
-      "team": "CLE",
-      "week": 10,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "T.Kraft",
+      "player": "J.Jacobs",
       "team": "GB",
-      "week": 10,
-      "redZoneShare": 0.5
-    },
-    {
-      "player": "H.Henry",
-      "team": "NE",
-      "week": 10,
-      "redZoneShare": 0.25
-    },
-    {
-      "player": "H.Fannin",
-      "team": "CLE",
-      "week": 10,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "G.Pickens",
-      "team": "DAL",
-      "week": 10,
-      "redZoneShare": 0.182
-    },
-    {
-      "player": "X.Hutchinson",
-      "team": "HOU",
-      "week": 10,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "W.Marks",
-      "team": "HOU",
-      "week": 10,
-      "redZoneShare": 0.429
-    },
-    {
-      "player": "A.Jeanty",
-      "team": "LV",
-      "week": 10,
-      "redZoneShare": 0.333
-    },
-    {
-      "player": "E.Johnson",
-      "team": "KC",
-      "week": 10,
-      "redZoneShare": 0.571
-    },
-    {
-      "player": "C.Parkinson",
-      "team": "LA",
-      "week": 10,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "C.Skattebo",
-      "team": "NYG",
-      "week": 10,
-      "redZoneShare": 0.778
+      "week": 9,
+      "redZoneShare": 0.214
     },
     {
       "player": "W.Kacmarek",
@@ -1737,22 +1275,22 @@
       "redZoneShare": 0.167
     },
     {
-      "player": "A.Kamara",
-      "team": "NO",
+      "player": "M.Washington",
+      "team": "LV",
       "week": 10,
-      "redZoneShare": 0.333
+      "redZoneShare": 0.111
     },
     {
-      "player": "C.Olave",
-      "team": "NO",
+      "player": "N.Boerkircher",
+      "team": "JAX",
       "week": 10,
-      "redZoneShare": 0.167
+      "redZoneShare": 0.062
     },
     {
-      "player": "C.Daniels",
-      "team": "LA",
+      "player": "W.Marks",
+      "team": "HOU",
       "week": 10,
-      "redZoneShare": 0.083
+      "redZoneShare": 0.429
     },
     {
       "player": "D.Kincaid",
@@ -1761,280 +1299,10 @@
       "redZoneShare": 0.1
     },
     {
-      "player": "C.Heyward",
-      "team": "LV",
-      "week": 10,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "D.Meyers",
-      "team": "CIN",
-      "week": 10,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "J.Meyers",
-      "team": "JAX",
-      "week": 10,
-      "redZoneShare": 0.062
-    },
-    {
-      "player": "O.Hampton",
-      "team": "LAC",
-      "week": 10,
-      "redZoneShare": 0.6
-    },
-    {
-      "player": "C.Brooks",
-      "team": "GB",
-      "week": 10,
-      "redZoneShare": 0.5
-    },
-    {
-      "player": "C.Allen",
-      "team": "KC",
-      "week": 10,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "B.Robinson",
-      "team": "ATL",
-      "week": 10,
-      "redZoneShare": 0.357
-    },
-    {
-      "player": "B.Skowronek",
-      "team": "PIT",
-      "week": 10,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "R.Stevenson",
-      "team": "NE",
-      "week": 10,
-      "redZoneShare": 0.25
-    },
-    {
-      "player": "J.Gibbs",
-      "team": "DET",
-      "week": 10,
-      "redZoneShare": 0.375
-    },
-    {
-      "player": "J.Mason",
-      "team": "MIN",
-      "week": 10,
-      "redZoneShare": 0.091
-    },
-    {
-      "player": "S.LaPorta",
-      "team": "DET",
-      "week": 10,
-      "redZoneShare": 0.125
-    },
-    {
-      "player": "J.Daniels",
-      "team": "WAS",
-      "week": 10,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "J.Cook",
-      "team": "BUF",
-      "week": 10,
-      "redZoneShare": 0.5
-    },
-    {
-      "player": "L.Treadwell",
-      "team": "IND",
-      "week": 10,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "D.Schultz",
-      "team": "HOU",
-      "week": 10,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "D.Waller",
-      "team": "CAR",
-      "week": 10,
-      "redZoneShare": 0.071
-    },
-    {
-      "player": "D.Sampson",
-      "team": "CLE",
-      "week": 10,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "D.Samuel",
-      "team": "SF",
-      "week": 10,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "D.Prescott",
-      "team": "DAL",
-      "week": 10,
-      "redZoneShare": 0.182
-    },
-    {
-      "player": "I.Williams",
-      "team": "NYJ",
-      "week": 10,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "J.Coker",
-      "team": "CAR",
-      "week": 10,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "J.Chase",
-      "team": "CIN",
-      "week": 10,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "B.Sinnott",
-      "team": "WAS",
-      "week": 10,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "J.Allen",
-      "team": "BUF",
-      "week": 10,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "J.Bech",
-      "team": "LV",
-      "week": 10,
-      "redZoneShare": 0.111
-    },
-    {
       "player": "D.London",
       "team": "ATL",
       "week": 10,
       "redZoneShare": 0.071
-    },
-    {
-      "player": "B.Spann-Ford",
-      "team": "DAL",
-      "week": 10,
-      "redZoneShare": 0.091
-    },
-    {
-      "player": "B.Strange",
-      "team": "JAX",
-      "week": 10,
-      "redZoneShare": 0.062
-    },
-    {
-      "player": "R.Flournoy",
-      "team": "DAL",
-      "week": 10,
-      "redZoneShare": 0.273
-    },
-    {
-      "player": "S.Diggs",
-      "team": "WAS",
-      "week": 10,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "D.Sample",
-      "team": "CIN",
-      "week": 10,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "R.White",
-      "team": "WAS",
-      "week": 10,
-      "redZoneShare": 0.4
-    },
-    {
-      "player": "D.Moore",
-      "team": "BUF",
-      "week": 10,
-      "redZoneShare": 0.1
-    },
-    {
-      "player": "M.Andrews",
-      "team": "BAL",
-      "week": 10,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "M.Bredeson",
-      "team": "MIN",
-      "week": 10,
-      "redZoneShare": 0.091
-    },
-    {
-      "player": "D.Allen",
-      "team": "LA",
-      "week": 10,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "J.Wright",
-      "team": "MIA",
-      "week": 10,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "N.Collins",
-      "team": "HOU",
-      "week": 10,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "K.Sadiq",
-      "team": "NYJ",
-      "week": 10,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "K.McCord",
-      "team": "MIA",
-      "week": 10,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "B.Tuten",
-      "team": "JAX",
-      "week": 10,
-      "redZoneShare": 0.688
-    },
-    {
-      "player": "D.Bellinger",
-      "team": "TEN",
-      "week": 10,
-      "redZoneShare": 0.5
-    },
-    {
-      "player": "D.Boston",
-      "team": "CLE",
-      "week": 10,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "D.Henry",
-      "team": "BAL",
-      "week": 10,
-      "redZoneShare": 0.444
-    },
-    {
-      "player": "C.Klubnik",
-      "team": "NYJ",
-      "week": 10,
-      "redZoneShare": 0.167
     },
     {
       "player": "D.Metcalf",
@@ -2043,34 +1311,16 @@
       "redZoneShare": 0.2
     },
     {
-      "player": "J.Fields",
-      "team": "KC",
+      "player": "N.Collins",
+      "team": "HOU",
       "week": 10,
       "redZoneShare": 0.143
     },
     {
-      "player": "J.Dotson",
-      "team": "ATL",
+      "player": "J.Price",
+      "team": "SEA",
       "week": 10,
-      "redZoneShare": 0.071
-    },
-    {
-      "player": "J.Downs",
-      "team": "KC",
-      "week": 10,
-      "redZoneShare": 0.143
-    },
-    {
-      "player": "J.Endries",
-      "team": "CIN",
-      "week": 10,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "C.McCaffrey",
-      "team": "SF",
-      "week": 10,
-      "redZoneShare": 0.8
+      "redZoneShare": 0.667
     },
     {
       "player": "C.Moore",
@@ -2079,37 +1329,55 @@
       "redZoneShare": 0.111
     },
     {
-      "player": "J.Nailor",
-      "team": "LV",
-      "week": 10,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "C.Hubbard",
-      "team": "CAR",
-      "week": 10,
-      "redZoneShare": 0.5
-    },
-    {
-      "player": "M.Nabers",
-      "team": "NYG",
-      "week": 10,
-      "redZoneShare": 0.111
-    },
-    {
-      "player": "M.Gesicki",
-      "team": "CIN",
-      "week": 10,
-      "redZoneShare": 0.083
-    },
-    {
-      "player": "C.Lamb",
+      "player": "R.Flournoy",
       "team": "DAL",
       "week": 10,
-      "redZoneShare": 0.091
+      "redZoneShare": 0.273
     },
     {
-      "player": "T.Etienne",
+      "player": "H.Fannin",
+      "team": "CLE",
+      "week": 10,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "K.Concepcion",
+      "team": "CLE",
+      "week": 10,
+      "redZoneShare": 0.222
+    },
+    {
+      "player": "R.Stevenson",
+      "team": "NE",
+      "week": 10,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "G.Dulcich",
+      "team": "MIA",
+      "week": 10,
+      "redZoneShare": 0.333
+    },
+    {
+      "player": "T.Tremble",
+      "team": "CAR",
+      "week": 10,
+      "redZoneShare": 0.214
+    },
+    {
+      "player": "T.Wease",
+      "team": "LAC",
+      "week": 10,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "A.Barner",
+      "team": "SEA",
+      "week": 10,
+      "redZoneShare": 0.333
+    },
+    {
+      "player": "A.Estime",
       "team": "NO",
       "week": 10,
       "redZoneShare": 0.167
@@ -2121,40 +1389,16 @@
       "redZoneShare": 0.083
     },
     {
-      "player": "C.Brown",
-      "team": "CIN",
+      "player": "L.Nichols",
+      "team": "PIT",
       "week": 10,
-      "redZoneShare": 0.25
+      "redZoneShare": 0.4
     },
     {
-      "player": "G.Wilson",
-      "team": "NYJ",
+      "player": "L.Treadwell",
+      "team": "IND",
       "week": 10,
-      "redZoneShare": 0.333
-    },
-    {
-      "player": "J.Williams",
-      "team": "DAL",
-      "week": 10,
-      "redZoneShare": 0.091
-    },
-    {
-      "player": "T.Higbee",
-      "team": "LA",
-      "week": 10,
-      "redZoneShare": 0.167
-    },
-    {
-      "player": "B.Corum",
-      "team": "LA",
-      "week": 10,
-      "redZoneShare": 0.5
-    },
-    {
-      "player": "B.Collins",
-      "team": "ATL",
-      "week": 10,
-      "redZoneShare": 0.143
+      "redZoneShare": 0.2
     },
     {
       "player": "L.Schoonmaker",
@@ -2163,26 +1407,50 @@
       "redZoneShare": 0.091
     },
     {
-      "player": "K.Concepcion",
-      "team": "CLE",
+      "player": "I.Williams",
+      "team": "NYJ",
       "week": 10,
-      "redZoneShare": 0.222
+      "redZoneShare": 0.167
     },
     {
-      "player": "E.Demercado",
-      "team": "HOU",
+      "player": "J.Wright",
+      "team": "MIA",
       "week": 10,
-      "redZoneShare": 0.143
+      "redZoneShare": 0.167
     },
     {
-      "player": "R.Davis",
-      "team": "BUF",
+      "player": "H.Henry",
+      "team": "NE",
       "week": 10,
-      "redZoneShare": 0.1
+      "redZoneShare": 0.25
     },
     {
-      "player": "O.Zaccheaus",
+      "player": "S.LaPorta",
+      "team": "DET",
+      "week": 10,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "S.Perine",
+      "team": "CIN",
+      "week": 10,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "C.Brooks",
+      "team": "GB",
+      "week": 10,
+      "redZoneShare": 0.5
+    },
+    {
+      "player": "C.Blair",
       "team": "ATL",
+      "week": 10,
+      "redZoneShare": 0.214
+    },
+    {
+      "player": "C.Allen",
+      "team": "KC",
       "week": 10,
       "redZoneShare": 0.143
     },
@@ -2193,10 +1461,124 @@
       "redZoneShare": 0.25
     },
     {
-      "player": "L.Nichols",
-      "team": "PIT",
+      "player": "R.Davis",
+      "team": "BUF",
+      "week": 10,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "C.Olave",
+      "team": "NO",
+      "week": 10,
+      "redZoneShare": 0.167
+    },
+    {
+      "player": "M.Andrews",
+      "team": "BAL",
+      "week": 10,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "C.Parkinson",
+      "team": "LA",
+      "week": 10,
+      "redZoneShare": 0.083
+    },
+    {
+      "player": "E.Demercado",
+      "team": "HOU",
+      "week": 10,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "Q.Judkins",
+      "team": "CLE",
+      "week": 10,
+      "redZoneShare": 0.333
+    },
+    {
+      "player": "C.Klubnik",
+      "team": "NYJ",
+      "week": 10,
+      "redZoneShare": 0.167
+    },
+    {
+      "player": "K.Sadiq",
+      "team": "NYJ",
+      "week": 10,
+      "redZoneShare": 0.167
+    },
+    {
+      "player": "R.White",
+      "team": "WAS",
       "week": 10,
       "redZoneShare": 0.4
+    },
+    {
+      "player": "C.Heyward",
+      "team": "LV",
+      "week": 10,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "K.McCord",
+      "team": "MIA",
+      "week": 10,
+      "redZoneShare": 0.167
+    },
+    {
+      "player": "C.Daniels",
+      "team": "LA",
+      "week": 10,
+      "redZoneShare": 0.083
+    },
+    {
+      "player": "M.Bredeson",
+      "team": "MIN",
+      "week": 10,
+      "redZoneShare": 0.091
+    },
+    {
+      "player": "B.Sinnott",
+      "team": "WAS",
+      "week": 10,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "B.Robinson",
+      "team": "ATL",
+      "week": 10,
+      "redZoneShare": 0.357
+    },
+    {
+      "player": "T.Higbee",
+      "team": "LA",
+      "week": 10,
+      "redZoneShare": 0.167
+    },
+    {
+      "player": "J.Fields",
+      "team": "KC",
+      "week": 10,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "T.Lawrence",
+      "team": "JAX",
+      "week": 10,
+      "redZoneShare": 0.062
+    },
+    {
+      "player": "B.Collins",
+      "team": "ATL",
+      "week": 10,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "J.Dotson",
+      "team": "ATL",
+      "week": 10,
+      "redZoneShare": 0.071
     },
     {
       "player": "J.Taylor",
@@ -2211,14 +1593,26 @@
       "redZoneShare": 0.167
     },
     {
-      "player": "B.Hall",
-      "team": "NYJ",
+      "player": "D.Meyers",
+      "team": "CIN",
       "week": 10,
-      "redZoneShare": 0.167
+      "redZoneShare": 0.083
     },
     {
-      "player": "I.Likely",
-      "team": "NYG",
+      "player": "D.Sampson",
+      "team": "CLE",
+      "week": 10,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "X.Hutchinson",
+      "team": "HOU",
+      "week": 10,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "J.Lane",
+      "team": "BAL",
       "week": 10,
       "redZoneShare": 0.111
     },
@@ -2229,76 +1623,46 @@
       "redZoneShare": 0.167
     },
     {
-      "player": "Q.Judkins",
+      "player": "D.Boston",
       "team": "CLE",
-      "week": 10,
-      "redZoneShare": 0.333
-    },
-    {
-      "player": "J.Herbert",
-      "team": "LAC",
-      "week": 10,
-      "redZoneShare": 0.2
-    },
-    {
-      "player": "J.Jefferson",
-      "team": "MIN",
-      "week": 10,
-      "redZoneShare": 0.182
-    },
-    {
-      "player": "J.Hill",
-      "team": "BAL",
-      "week": 10,
-      "redZoneShare": 0.222
-    },
-    {
-      "player": "J.Lane",
-      "team": "BAL",
       "week": 10,
       "redZoneShare": 0.111
     },
     {
-      "player": "N.Boerkircher",
-      "team": "JAX",
+      "player": "D.Allen",
+      "team": "LA",
       "week": 10,
-      "redZoneShare": 0.062
+      "redZoneShare": 0.083
     },
     {
-      "player": "F.Mendoza",
-      "team": "LV",
+      "player": "D.Sample",
+      "team": "CIN",
       "week": 10,
-      "redZoneShare": 0.222
+      "redZoneShare": 0.083
     },
     {
-      "player": "T.McMillan",
-      "team": "CAR",
+      "player": "D.Schultz",
+      "team": "HOU",
       "week": 10,
-      "redZoneShare": 0.071
+      "redZoneShare": 0.143
     },
     {
-      "player": "T.Pollard",
-      "team": "TEN",
+      "player": "D.Samuel",
+      "team": "SF",
+      "week": 10,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "T.Kraft",
+      "team": "GB",
       "week": 10,
       "redZoneShare": 0.5
     },
     {
-      "player": "A.Barner",
-      "team": "SEA",
+      "player": "D.Watson",
+      "team": "CLE",
       "week": 10,
-      "redZoneShare": 0.333
-    },
-    {
-      "player": "P.Washington",
-      "team": "JAX",
-      "week": 10,
-      "redZoneShare": 0.062
-    },
-    {
-      "player": "C.Blair",
-      "team": "ATL",
-      "week": 10,
-      "redZoneShare": 0.214
+      "redZoneShare": 0.111
     },
     {
       "player": "R.Dowdle",
@@ -2307,28 +1671,418 @@
       "redZoneShare": 0.2
     },
     {
-      "player": "T.Tremble",
+      "player": "D.Waller",
       "team": "CAR",
       "week": 10,
-      "redZoneShare": 0.214
+      "redZoneShare": 0.071
     },
     {
-      "player": "A.Estime",
-      "team": "NO",
+      "player": "O.Zaccheaus",
+      "team": "ATL",
       "week": 10,
-      "redZoneShare": 0.167
+      "redZoneShare": 0.143
     },
     {
-      "player": "G.Bartholomew",
+      "player": "B.Skowronek",
+      "team": "PIT",
+      "week": 10,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "J.Mason",
       "team": "MIN",
       "week": 10,
       "redZoneShare": 0.091
     },
     {
-      "player": "M.Klein",
-      "team": "HOU",
+      "player": "B.Corum",
+      "team": "LA",
+      "week": 10,
+      "redZoneShare": 0.5
+    },
+    {
+      "player": "J.Downs",
+      "team": "KC",
+      "week": 10,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "J.Chase",
+      "team": "CIN",
+      "week": 10,
+      "redZoneShare": 0.083
+    },
+    {
+      "player": "T.Higgins",
+      "team": "CIN",
+      "week": 10,
+      "redZoneShare": 0.083
+    },
+    {
+      "player": "M.Hollins",
+      "team": "NE",
+      "week": 10,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "I.TeSlaa",
+      "team": "DET",
+      "week": 10,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "J.Allen",
+      "team": "BUF",
+      "week": 10,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "C.McCaffrey",
+      "team": "SF",
+      "week": 11,
+      "redZoneShare": 0.571
+    },
+    {
+      "player": "K.Vidal",
+      "team": "LAC",
+      "week": 11,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "R.Odunze",
+      "team": "CHI",
+      "week": 11,
+      "redZoneShare": 0.333
+    },
+    {
+      "player": "K.Shakir",
+      "team": "BUF",
+      "week": 11,
+      "redZoneShare": 0.154
+    },
+    {
+      "player": "F.Mendoza",
+      "team": "LV",
+      "week": 11,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "E.Johnson",
+      "team": "KC",
+      "week": 11,
+      "redZoneShare": 0.545
+    },
+    {
+      "player": "J.Waddle",
+      "team": "DEN",
+      "week": 11,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "J.Warren",
+      "team": "PIT",
+      "week": 11,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "J.Williams",
+      "team": "DAL",
+      "week": 11,
+      "redZoneShare": 0.368
+    },
+    {
+      "player": "J.Cameron",
+      "team": "JAX",
+      "week": 11,
+      "redZoneShare": 0.067
+    },
+    {
+      "player": "C.Brown",
+      "team": "CIN",
+      "week": 11,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "K.Latu",
+      "team": "BUF",
+      "week": 11,
+      "redZoneShare": 0.077
+    },
+    {
+      "player": "G.Wilson",
+      "team": "NYJ",
+      "week": 11,
+      "redZoneShare": 0.071
+    },
+    {
+      "player": "S.McGowan",
+      "team": "IND",
+      "week": 11,
+      "redZoneShare": 0.5
+    },
+    {
+      "player": "C.Douglas",
+      "team": "MIA",
+      "week": 11,
+      "redZoneShare": 1.0
+    },
+    {
+      "player": "Bri.Thomas",
+      "team": "JAX",
+      "week": 11,
+      "redZoneShare": 0.133
+    },
+    {
+      "player": "I.Likely",
+      "team": "NYG",
+      "week": 11,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "L.McConkey",
+      "team": "LAC",
       "week": 11,
       "redZoneShare": 0.2
+    },
+    {
+      "player": "S.Vaki",
+      "team": "DET",
+      "week": 11,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "M.Carter",
+      "team": "TEN",
+      "week": 11,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "S.Shepard",
+      "team": "NYJ",
+      "week": 11,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "C.Ridley",
+      "team": "TEN",
+      "week": 11,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "P.Washington",
+      "team": "JAX",
+      "week": 11,
+      "redZoneShare": 0.267
+    },
+    {
+      "player": "K.Monangai",
+      "team": "CHI",
+      "week": 11,
+      "redZoneShare": 0.167
+    },
+    {
+      "player": "S.Diggs",
+      "team": "WAS",
+      "week": 11,
+      "redZoneShare": 0.222
+    },
+    {
+      "player": "R.Wilson",
+      "team": "PIT",
+      "week": 11,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "S.Barkley",
+      "team": "PHI",
+      "week": 11,
+      "redZoneShare": 0.333
+    },
+    {
+      "player": "S.Fehoko",
+      "team": "ARI",
+      "week": 11,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "C.Lamb",
+      "team": "DAL",
+      "week": 11,
+      "redZoneShare": 0.211
+    },
+    {
+      "player": "C.Hubbard",
+      "team": "CAR",
+      "week": 11,
+      "redZoneShare": 0.533
+    },
+    {
+      "player": "C.Rodriguez",
+      "team": "JAX",
+      "week": 11,
+      "redZoneShare": 0.067
+    },
+    {
+      "player": "C.Skattebo",
+      "team": "NYG",
+      "week": 11,
+      "redZoneShare": 0.375
+    },
+    {
+      "player": "R.Bateman",
+      "team": "BAL",
+      "week": 11,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "Q.Johnston",
+      "team": "LAC",
+      "week": 11,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "M.Evans",
+      "team": "CAR",
+      "week": 11,
+      "redZoneShare": 0.067
+    },
+    {
+      "player": "G.Kittle",
+      "team": "SF",
+      "week": 11,
+      "redZoneShare": 0.286
+    },
+    {
+      "player": "G.Pickens",
+      "team": "DAL",
+      "week": 11,
+      "redZoneShare": 0.211
+    },
+    {
+      "player": "D.Knox",
+      "team": "BUF",
+      "week": 11,
+      "redZoneShare": 0.077
+    },
+    {
+      "player": "A.Ekeler",
+      "team": "WAS",
+      "week": 11,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "D.Moore",
+      "team": "BUF",
+      "week": 11,
+      "redZoneShare": 0.231
+    },
+    {
+      "player": "J.Milton",
+      "team": "PHI",
+      "week": 11,
+      "redZoneShare": 0.333
+    },
+    {
+      "player": "J.Gibbs",
+      "team": "DET",
+      "week": 11,
+      "redZoneShare": 0.7
+    },
+    {
+      "player": "T.Pollard",
+      "team": "TEN",
+      "week": 11,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "T.McBride",
+      "team": "ARI",
+      "week": 11,
+      "redZoneShare": 0.5
+    },
+    {
+      "player": "J.Herbert",
+      "team": "LAC",
+      "week": 11,
+      "redZoneShare": 0.3
+    },
+    {
+      "player": "A.St. Brown",
+      "team": "DET",
+      "week": 11,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "J.Jennings",
+      "team": "MIN",
+      "week": 11,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "J.Jefferson",
+      "team": "MIN",
+      "week": 11,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "A.Trautman",
+      "team": "DEN",
+      "week": 11,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "J.Goff",
+      "team": "DET",
+      "week": 11,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "J.Hill",
+      "team": "BAL",
+      "week": 11,
+      "redZoneShare": 0.222
+    },
+    {
+      "player": "T.McMillan",
+      "team": "CAR",
+      "week": 11,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "A.Williams",
+      "team": "WAS",
+      "week": 11,
+      "redZoneShare": 0.222
+    },
+    {
+      "player": "C.Loveland",
+      "team": "CHI",
+      "week": 11,
+      "redZoneShare": 0.167
+    },
+    {
+      "player": "G.Bernard",
+      "team": "PIT",
+      "week": 11,
+      "redZoneShare": 0.375
+    },
+    {
+      "player": "G.Bartholomew",
+      "team": "MIN",
+      "week": 11,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "A.Prentice",
+      "team": "DEN",
+      "week": 11,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "T.Shough",
+      "team": "NO",
+      "week": 11,
+      "redZoneShare": 0.143
     },
     {
       "player": "A.Dulin",
@@ -2337,404 +2091,716 @@
       "redZoneShare": 0.5
     },
     {
+      "player": "R.Rice",
+      "team": "KC",
+      "week": 11,
+      "redZoneShare": 0.182
+    },
+    {
+      "player": "P.Freiermuth",
+      "team": "PIT",
+      "week": 11,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "O.Hampton",
+      "team": "LAC",
+      "week": 11,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "M.Lemon",
+      "team": "PHI",
+      "week": 11,
+      "redZoneShare": 0.333
+    },
+    {
+      "player": "M.Hurleman",
+      "team": "PIT",
+      "week": 11,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "M.Klein",
+      "team": "HOU",
+      "week": 11,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "C.Ward",
+      "team": "TEN",
+      "week": 11,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "C.Young",
+      "team": "CIN",
+      "week": 11,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "D.Vele",
+      "team": "NO",
+      "week": 11,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "T.Felton",
+      "team": "MIN",
+      "week": 11,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "J.Nailor",
+      "team": "LV",
+      "week": 11,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "J.Meyers",
+      "team": "JAX",
+      "week": 11,
+      "redZoneShare": 0.267
+    },
+    {
+      "player": "J.Endries",
+      "team": "CIN",
+      "week": 11,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "B.Nix",
+      "team": "DEN",
+      "week": 11,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "J.Coker",
+      "team": "CAR",
+      "week": 11,
+      "redZoneShare": 0.067
+    },
+    {
+      "player": "J.Coleman",
+      "team": "DEN",
+      "week": 11,
+      "redZoneShare": 0.556
+    },
+    {
+      "player": "B.Irving",
+      "team": "TB",
+      "week": 11,
+      "redZoneShare": 0.636
+    },
+    {
+      "player": "M.Gesicki",
+      "team": "CIN",
+      "week": 11,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "J.Croskey-Merritt",
+      "team": "WAS",
+      "week": 11,
+      "redZoneShare": 0.333
+    },
+    {
+      "player": "J.Corbin",
+      "team": "DAL",
+      "week": 11,
+      "redZoneShare": 0.053
+    },
+    {
+      "player": "J.Cook",
+      "team": "BUF",
+      "week": 11,
+      "redZoneShare": 0.231
+    },
+    {
+      "player": "D.Swift",
+      "team": "CHI",
+      "week": 11,
+      "redZoneShare": 0.333
+    },
+    {
+      "player": "B.Sharp",
+      "team": "TB",
+      "week": 11,
+      "redZoneShare": 0.091
+    },
+    {
+      "player": "T.Hockenson",
+      "team": "MIN",
+      "week": 11,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "B.Mayfield",
+      "team": "TB",
+      "week": 11,
+      "redZoneShare": 0.091
+    },
+    {
+      "player": "I.Thomas",
+      "team": "LV",
+      "week": 11,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "B.Tuten",
+      "team": "JAX",
+      "week": 11,
+      "redZoneShare": 0.133
+    },
+    {
+      "player": "B.Spann-Ford",
+      "team": "DAL",
+      "week": 11,
+      "redZoneShare": 0.053
+    },
+    {
+      "player": "J.Winston",
+      "team": "NYG",
+      "week": 11,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "B.Strange",
+      "team": "JAX",
+      "week": 11,
+      "redZoneShare": 0.067
+    },
+    {
+      "player": "T.Etienne",
+      "team": "CAR",
+      "week": 11,
+      "redZoneShare": 0.133
+    },
+    {
+      "player": "C.Tate",
+      "team": "TEN",
+      "week": 11,
+      "redZoneShare": 0.2
+    },
+    {
+      "player": "J.Bech",
+      "team": "LV",
+      "week": 11,
+      "redZoneShare": 0.286
+    },
+    {
+      "player": "D.Bellinger",
+      "team": "TEN",
+      "week": 11,
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "D.Henry",
+      "team": "BAL",
+      "week": 11,
+      "redZoneShare": 0.444
+    },
+    {
+      "player": "J.Daniels",
+      "team": "WAS",
+      "week": 11,
+      "redZoneShare": 0.111
+    },
+    {
+      "player": "T.Johnson",
+      "team": "BUF",
+      "week": 11,
+      "redZoneShare": 0.231
+    },
+    {
+      "player": "B.Allen",
+      "team": "NYJ",
+      "week": 11,
+      "redZoneShare": 0.286
+    },
+    {
+      "player": "B.Hall",
+      "team": "NYJ",
+      "week": 11,
+      "redZoneShare": 0.5
+    },
+    {
+      "player": "T.Hurst",
+      "team": "TB",
+      "week": 11,
+      "redZoneShare": 0.182
+    },
+    {
+      "player": "T.Kelce",
+      "team": "KC",
+      "week": 11,
+      "redZoneShare": 0.091
+    },
+    {
       "player": "D.Montgomery",
       "team": "HOU",
       "week": 11,
       "redZoneShare": 0.8
     },
     {
-      "player": "S.McGowan",
-      "team": "IND",
+      "player": "D.Njoku",
+      "team": "LAC",
       "week": 11,
-      "redZoneShare": 0.5
+      "redZoneShare": 0.1
+    },
+    {
+      "player": "N.Gray",
+      "team": "KC",
+      "week": 11,
+      "redZoneShare": 0.091
+    },
+    {
+      "player": "N.Fant",
+      "team": "NO",
+      "week": 11,
+      "redZoneShare": 0.286
+    },
+    {
+      "player": "M.Nabers",
+      "team": "NYG",
+      "week": 11,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "D.Dallas",
+      "team": "MIN",
+      "week": 11,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "D.Prescott",
+      "team": "DAL",
+      "week": 11,
+      "redZoneShare": 0.105
+    },
+    {
+      "player": "A.Jones",
+      "team": "MIN",
+      "week": 11,
+      "redZoneShare": 0.125
+    },
+    {
+      "player": "Z.Jones",
+      "team": "ARI",
+      "week": 11,
+      "redZoneShare": 0.25
+    },
+    {
+      "player": "Z.Flowers",
+      "team": "BAL",
+      "week": 11,
+      "redZoneShare": 0.222
+    },
+    {
+      "player": "A.Jeanty",
+      "team": "LV",
+      "week": 11,
+      "redZoneShare": 0.286
+    },
+    {
+      "player": "A.Kamara",
+      "team": "NO",
+      "week": 11,
+      "redZoneShare": 0.143
+    },
+    {
+      "player": "X.Worthy",
+      "team": "KC",
+      "week": 11,
+      "redZoneShare": 0.091
     }
   ],
   "teams": [
     {
-      "team": "TB",
-      "week": 9,
-      "pressureRateAllowed": 0.167,
-      "oppDefEpaPerPlay": -0.1678
-    },
-    {
-      "team": "DEN",
-      "week": 9,
-      "pressureRateAllowed": 0.077,
-      "oppDefEpaPerPlay": 0.1096
-    },
-    {
-      "team": "PHI",
-      "week": 9,
-      "pressureRateAllowed": 0.239,
-      "oppDefEpaPerPlay": -0.0666
-    },
-    {
-      "team": "CHI",
-      "week": 9,
-      "pressureRateAllowed": 0.098,
-      "oppDefEpaPerPlay": -0.1599
-    },
-    {
-      "team": "LAC",
+      "team": "NE",
       "week": 10,
-      "pressureRateAllowed": 0.259,
-      "oppDefEpaPerPlay": -0.0285
+      "pressureRateAllowed": 0.167,
+      "oppDefEpaPerPlay": 0.2529
     },
     {
       "team": "LA",
       "week": 10,
       "pressureRateAllowed": 0.179,
-      "oppDefEpaPerPlay": -0.5213
-    },
-    {
-      "team": "LV",
-      "week": 10,
-      "pressureRateAllowed": 0.308,
-      "oppDefEpaPerPlay": 0.1109
-    },
-    {
-      "team": "MIA",
-      "week": 10,
-      "pressureRateAllowed": 0.211,
-      "oppDefEpaPerPlay": -0.1936
-    },
-    {
-      "team": "KC",
-      "week": 10,
-      "pressureRateAllowed": 0.184,
-      "oppDefEpaPerPlay": -0.2828
-    },
-    {
-      "team": "BAL",
-      "week": 10,
-      "pressureRateAllowed": 0.18,
-      "oppDefEpaPerPlay": -0.0051
-    },
-    {
-      "team": "SEA",
-      "week": 10,
-      "pressureRateAllowed": 0.182,
-      "oppDefEpaPerPlay": -0.1938
-    },
-    {
-      "team": "TEN",
-      "week": 10,
-      "pressureRateAllowed": 0.093,
-      "oppDefEpaPerPlay": 0.2064
-    },
-    {
-      "team": "SF",
-      "week": 10,
-      "pressureRateAllowed": 0.167,
-      "oppDefEpaPerPlay": 0.1924
-    },
-    {
-      "team": "BUF",
-      "week": 10,
-      "pressureRateAllowed": 0.091,
-      "oppDefEpaPerPlay": -0.0967
-    },
-    {
-      "team": "JAX",
-      "week": 10,
-      "pressureRateAllowed": 0.081,
-      "oppDefEpaPerPlay": -0.0196
-    },
-    {
-      "team": "ATL",
-      "week": 10,
-      "pressureRateAllowed": 0.083,
-      "oppDefEpaPerPlay": 0.1823
-    },
-    {
-      "team": "ARI",
-      "week": 10,
-      "pressureRateAllowed": 0.208,
-      "oppDefEpaPerPlay": 0.2548
-    },
-    {
-      "team": "NO",
-      "week": 10,
-      "pressureRateAllowed": 0.186,
-      "oppDefEpaPerPlay": -0.0729
-    },
-    {
-      "team": "NYG",
-      "week": 10,
-      "pressureRateAllowed": 0.15,
-      "oppDefEpaPerPlay": 0.0459
-    },
-    {
-      "team": "CIN",
-      "week": 10,
-      "pressureRateAllowed": 0.068,
-      "oppDefEpaPerPlay": 0.0158
-    },
-    {
-      "team": "NYJ",
-      "week": 10,
-      "pressureRateAllowed": 0.25,
-      "oppDefEpaPerPlay": 0.2965
-    },
-    {
-      "team": "DAL",
-      "week": 10,
-      "pressureRateAllowed": 0.2,
-      "oppDefEpaPerPlay": 0.4485
-    },
-    {
-      "team": "MIN",
-      "week": 10,
-      "pressureRateAllowed": 0.111,
-      "oppDefEpaPerPlay": -0.2203
-    },
-    {
-      "team": "PIT",
-      "week": 10,
-      "pressureRateAllowed": 0.162,
-      "oppDefEpaPerPlay": 0.3675
+      "oppDefEpaPerPlay": -0.5117
     },
     {
       "team": "CLE",
       "week": 10,
       "pressureRateAllowed": 0.152,
-      "oppDefEpaPerPlay": -0.042
+      "oppDefEpaPerPlay": -0.0571
     },
     {
-      "team": "NE",
+      "team": "SEA",
       "week": 10,
-      "pressureRateAllowed": 0.167,
-      "oppDefEpaPerPlay": 0.2356
+      "pressureRateAllowed": 0.182,
+      "oppDefEpaPerPlay": -0.1638
     },
     {
       "team": "GB",
       "week": 10,
       "pressureRateAllowed": 0.324,
-      "oppDefEpaPerPlay": 0.0635
+      "oppDefEpaPerPlay": 0.0642
     },
     {
-      "team": "DET",
+      "team": "ATL",
       "week": 10,
-      "pressureRateAllowed": 0.176,
-      "oppDefEpaPerPlay": -0.2636
+      "pressureRateAllowed": 0.083,
+      "oppDefEpaPerPlay": 0.2001
     },
     {
-      "team": "CAR",
-      "week": 10,
-      "pressureRateAllowed": 0.176,
-      "oppDefEpaPerPlay": -0.2484
+      "team": "MIN",
+      "week": 11,
+      "pressureRateAllowed": 0.136,
+      "oppDefEpaPerPlay": 0.3289
+    },
+    {
+      "team": "MIA",
+      "week": 11,
+      "pressureRateAllowed": 0.216,
+      "oppDefEpaPerPlay": 0.0291
+    },
+    {
+      "team": "BAL",
+      "week": 11,
+      "pressureRateAllowed": 0.128,
+      "oppDefEpaPerPlay": 0.0604
+    },
+    {
+      "team": "SF",
+      "week": 11,
+      "pressureRateAllowed": 0.143,
+      "oppDefEpaPerPlay": -0.1206
+    },
+    {
+      "team": "TB",
+      "week": 11,
+      "pressureRateAllowed": 0.119,
+      "oppDefEpaPerPlay": 0.2875
+    },
+    {
+      "team": "TEN",
+      "week": 11,
+      "pressureRateAllowed": 0.2,
+      "oppDefEpaPerPlay": 0.4411
     },
     {
       "team": "WAS",
-      "week": 10,
-      "pressureRateAllowed": 0.051,
-      "oppDefEpaPerPlay": 0.0804
+      "week": 11,
+      "pressureRateAllowed": 0.125,
+      "oppDefEpaPerPlay": 0.0379
     },
     {
-      "team": "IND",
+      "team": "ARI",
+      "week": 11,
+      "pressureRateAllowed": 0.167,
+      "oppDefEpaPerPlay": 0.2565
+    },
+    {
+      "team": "LV",
+      "week": 11,
+      "pressureRateAllowed": 0.205,
+      "oppDefEpaPerPlay": 0.0616
+    },
+    {
+      "team": "LAC",
       "week": 11,
       "pressureRateAllowed": 0.188,
-      "oppDefEpaPerPlay": 0.0634
+      "oppDefEpaPerPlay": 0.2341
     },
     {
       "team": "HOU",
       "week": 11,
       "pressureRateAllowed": 0.032,
-      "oppDefEpaPerPlay": -0.3115
+      "oppDefEpaPerPlay": -0.3063
+    },
+    {
+      "team": "KC",
+      "week": 11,
+      "pressureRateAllowed": 0.125,
+      "oppDefEpaPerPlay": -0.1265
+    },
+    {
+      "team": "JAX",
+      "week": 11,
+      "pressureRateAllowed": 0.216,
+      "oppDefEpaPerPlay": -0.1406
+    },
+    {
+      "team": "IND",
+      "week": 11,
+      "pressureRateAllowed": 0.188,
+      "oppDefEpaPerPlay": 0.0639
+    },
+    {
+      "team": "NYJ",
+      "week": 11,
+      "pressureRateAllowed": 0.043,
+      "oppDefEpaPerPlay": 0.136
+    },
+    {
+      "team": "DEN",
+      "week": 11,
+      "pressureRateAllowed": 0.081,
+      "oppDefEpaPerPlay": -0.021
+    },
+    {
+      "team": "NYG",
+      "week": 11,
+      "pressureRateAllowed": 0.07,
+      "oppDefEpaPerPlay": -0.0952
+    },
+    {
+      "team": "NO",
+      "week": 11,
+      "pressureRateAllowed": 0.196,
+      "oppDefEpaPerPlay": -0.1039
+    },
+    {
+      "team": "PIT",
+      "week": 11,
+      "pressureRateAllowed": 0.115,
+      "oppDefEpaPerPlay": -0.1479
+    },
+    {
+      "team": "CIN",
+      "week": 11,
+      "pressureRateAllowed": 0.186,
+      "oppDefEpaPerPlay": 0.0658
+    },
+    {
+      "team": "DAL",
+      "week": 11,
+      "pressureRateAllowed": 0.027,
+      "oppDefEpaPerPlay": 0.0463
+    },
+    {
+      "team": "DET",
+      "week": 11,
+      "pressureRateAllowed": 0.2,
+      "oppDefEpaPerPlay": 0.0655
+    },
+    {
+      "team": "CHI",
+      "week": 11,
+      "pressureRateAllowed": 0.111,
+      "oppDefEpaPerPlay": -0.1263
+    },
+    {
+      "team": "PHI",
+      "week": 11,
+      "pressureRateAllowed": 0.125,
+      "oppDefEpaPerPlay": -0.1283
+    },
+    {
+      "team": "CAR",
+      "week": 11,
+      "pressureRateAllowed": 0.212,
+      "oppDefEpaPerPlay": 0.0463
+    },
+    {
+      "team": "BUF",
+      "week": 11,
+      "pressureRateAllowed": 0.122,
+      "oppDefEpaPerPlay": -0.2706
     }
   ],
   "defense": [
     {
-      "team": "MIN",
-      "seasonDefEpaPerPlay": -0.1278,
+      "team": "JAX",
+      "seasonDefEpaPerPlay": -0.0987,
       "defRank": 1,
-      "plays": 535
-    },
-    {
-      "team": "TB",
-      "seasonDefEpaPerPlay": -0.1229,
-      "defRank": 2,
-      "plays": 515
+      "plays": 585
     },
     {
       "team": "LA",
-      "seasonDefEpaPerPlay": -0.1119,
-      "defRank": 3,
+      "seasonDefEpaPerPlay": -0.0963,
+      "defRank": 2,
       "plays": 582
     },
     {
-      "team": "JAX",
-      "seasonDefEpaPerPlay": -0.0907,
+      "team": "KC",
+      "seasonDefEpaPerPlay": -0.0817,
+      "defRank": 3,
+      "plays": 623
+    },
+    {
+      "team": "TB",
+      "seasonDefEpaPerPlay": -0.0807,
       "defRank": 4,
-      "plays": 523
+      "plays": 571
     },
     {
       "team": "SEA",
-      "seasonDefEpaPerPlay": -0.0822,
+      "seasonDefEpaPerPlay": -0.0783,
       "defRank": 5,
       "plays": 585
     },
     {
-      "team": "KC",
-      "seasonDefEpaPerPlay": -0.081,
+      "team": "MIN",
+      "seasonDefEpaPerPlay": -0.0768,
       "defRank": 6,
-      "plays": 568
-    },
-    {
-      "team": "GB",
-      "seasonDefEpaPerPlay": -0.0391,
-      "defRank": 7,
-      "plays": 656
+      "plays": 585
     },
     {
       "team": "CHI",
-      "seasonDefEpaPerPlay": -0.023,
+      "seasonDefEpaPerPlay": -0.0408,
+      "defRank": 7,
+      "plays": 543
+    },
+    {
+      "team": "GB",
+      "seasonDefEpaPerPlay": -0.0327,
       "defRank": 8,
-      "plays": 473
-    },
-    {
-      "team": "HOU",
-      "seasonDefEpaPerPlay": -0.0188,
-      "defRank": 9,
-      "plays": 626
-    },
-    {
-      "team": "SF",
-      "seasonDefEpaPerPlay": -0.0185,
-      "defRank": 10,
-      "plays": 558
-    },
-    {
-      "team": "CLE",
-      "seasonDefEpaPerPlay": -0.0128,
-      "defRank": 11,
-      "plays": 630
-    },
-    {
-      "team": "PIT",
-      "seasonDefEpaPerPlay": -0.0119,
-      "defRank": 12,
-      "plays": 549
+      "plays": 656
     },
     {
       "team": "BUF",
-      "seasonDefEpaPerPlay": -0.0103,
-      "defRank": 13,
-      "plays": 572
+      "seasonDefEpaPerPlay": -0.0301,
+      "defRank": 9,
+      "plays": 627
+    },
+    {
+      "team": "SF",
+      "seasonDefEpaPerPlay": -0.0285,
+      "defRank": 10,
+      "plays": 623
+    },
+    {
+      "team": "PIT",
+      "seasonDefEpaPerPlay": -0.0249,
+      "defRank": 11,
+      "plays": 597
+    },
+    {
+      "team": "HOU",
+      "seasonDefEpaPerPlay": -0.0151,
+      "defRank": 12,
+      "plays": 626
     },
     {
       "team": "NYG",
-      "seasonDefEpaPerPlay": -0.0034,
-      "defRank": 14,
-      "plays": 540
-    },
-    {
-      "team": "DEN",
-      "seasonDefEpaPerPlay": 0.0022,
-      "defRank": 15,
+      "seasonDefEpaPerPlay": -0.0141,
+      "defRank": 13,
       "plays": 608
     },
     {
-      "team": "CIN",
-      "seasonDefEpaPerPlay": 0.0039,
-      "defRank": 16,
-      "plays": 550
+      "team": "CLE",
+      "seasonDefEpaPerPlay": -0.0129,
+      "defRank": 14,
+      "plays": 630
+    },
+    {
+      "team": "DEN",
+      "seasonDefEpaPerPlay": 0.0038,
+      "defRank": 15,
+      "plays": 674
     },
     {
       "team": "CAR",
-      "seasonDefEpaPerPlay": 0.0072,
-      "defRank": 17,
-      "plays": 579
+      "seasonDefEpaPerPlay": 0.0147,
+      "defRank": 16,
+      "plays": 640
     },
     {
-      "team": "LAC",
-      "seasonDefEpaPerPlay": 0.0092,
-      "defRank": 18,
-      "plays": 538
+      "team": "CIN",
+      "seasonDefEpaPerPlay": 0.0158,
+      "defRank": 17,
+      "plays": 612
     },
     {
       "team": "BAL",
-      "seasonDefEpaPerPlay": 0.0189,
-      "defRank": 19,
-      "plays": 607
-    },
-    {
-      "team": "ATL",
-      "seasonDefEpaPerPlay": 0.0287,
-      "defRank": 20,
-      "plays": 636
+      "seasonDefEpaPerPlay": 0.0273,
+      "defRank": 18,
+      "plays": 674
     },
     {
       "team": "NO",
-      "seasonDefEpaPerPlay": 0.0338,
-      "defRank": 21,
-      "plays": 573
+      "seasonDefEpaPerPlay": 0.0322,
+      "defRank": 19,
+      "plays": 629
     },
     {
       "team": "WAS",
-      "seasonDefEpaPerPlay": 0.0339,
+      "seasonDefEpaPerPlay": 0.0349,
+      "defRank": 20,
+      "plays": 635
+    },
+    {
+      "team": "ATL",
+      "seasonDefEpaPerPlay": 0.0371,
+      "defRank": 21,
+      "plays": 636
+    },
+    {
+      "team": "LAC",
+      "seasonDefEpaPerPlay": 0.045,
       "defRank": 22,
-      "plays": 579
+      "plays": 597
     },
     {
       "team": "IND",
-      "seasonDefEpaPerPlay": 0.0404,
+      "seasonDefEpaPerPlay": 0.0474,
       "defRank": 23,
       "plays": 650
     },
     {
       "team": "DET",
-      "seasonDefEpaPerPlay": 0.0411,
+      "seasonDefEpaPerPlay": 0.0503,
       "defRank": 24,
-      "plays": 573
+      "plays": 637
     },
     {
       "team": "NE",
-      "seasonDefEpaPerPlay": 0.0604,
+      "seasonDefEpaPerPlay": 0.0575,
       "defRank": 25,
       "plays": 600
     },
     {
-      "team": "NYJ",
-      "seasonDefEpaPerPlay": 0.066,
+      "team": "PHI",
+      "seasonDefEpaPerPlay": 0.0586,
       "defRank": 26,
-      "plays": 614
+      "plays": 659
     },
     {
       "team": "MIA",
-      "seasonDefEpaPerPlay": 0.0671,
+      "seasonDefEpaPerPlay": 0.0692,
       "defRank": 27,
-      "plays": 509
+      "plays": 584
     },
     {
-      "team": "PHI",
-      "seasonDefEpaPerPlay": 0.078,
+      "team": "NYJ",
+      "seasonDefEpaPerPlay": 0.0735,
       "defRank": 28,
-      "plays": 590
-    },
-    {
-      "team": "TEN",
-      "seasonDefEpaPerPlay": 0.0866,
-      "defRank": 29,
-      "plays": 594
+      "plays": 671
     },
     {
       "team": "LV",
-      "seasonDefEpaPerPlay": 0.0872,
-      "defRank": 30,
-      "plays": 610
-    },
-    {
-      "team": "ARI",
-      "seasonDefEpaPerPlay": 0.0921,
-      "defRank": 31,
-      "plays": 607
+      "seasonDefEpaPerPlay": 0.0959,
+      "defRank": 29,
+      "plays": 678
     },
     {
       "team": "DAL",
-      "seasonDefEpaPerPlay": 0.1192,
+      "seasonDefEpaPerPlay": 0.1138,
+      "defRank": 30,
+      "plays": 692
+    },
+    {
+      "team": "ARI",
+      "seasonDefEpaPerPlay": 0.1155,
+      "defRank": 31,
+      "plays": 676
+    },
+    {
+      "team": "TEN",
+      "seasonDefEpaPerPlay": 0.1212,
       "defRank": 32,
-      "plays": 630
+      "plays": 657
     }
   ]
 }
